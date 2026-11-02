@@ -32,7 +32,7 @@ if dpkg -s drzreplay >/dev/null 2>&1; then
     UPDATE=1
 fi
 echo "Installing (asks for your password)…"
-sudo apt-get install -y "$DEB" </dev/tty
+sudo apt-get install -y "$DEB" </dev/null    # keep apt off the piped script; sudo asks on the terminal itself
 echo
 if [ -n "$I3SOCK" ] || echo "$XDG_CURRENT_DESKTOP" | grep -qi i3; then
     echo "i3: start a notification daemon in your i3 config if you have none:"
