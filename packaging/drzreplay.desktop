@@ -1,0 +1,24 @@
+[Desktop Entry]
+Type=Application
+Name=DrzReplay
+GenericName=Instant Replay
+Comment=Always records the last minute of your screen — one key saves it
+Exec=drzreplay
+Icon=drzreplay
+Terminal=false
+Categories=Graphics;
+Keywords=replay;record;clip;shadowplay;instant;screen;capture;
+StartupNotify=true
+Actions=save;start;stop;
+
+[Desktop Action save]
+Name=Save replay now
+Exec=drzreplay save
+
+[Desktop Action start]
+Name=Start recording
+Exec=drzreplay start
+
+[Desktop Action stop]
+Name=Stop recording
+Exec=drzreplay stop

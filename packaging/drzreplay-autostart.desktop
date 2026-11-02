@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=DrzReplay
+Comment=Instant replay recorder
+Exec=drzreplay daemon
+Icon=drzreplay
+Terminal=false
+NoDisplay=true
+X-GNOME-Autostart-enabled=true
+X-GNOME-Autostart-Delay=3

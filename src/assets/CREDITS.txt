@@ -1,0 +1,14 @@
+DrzReplay — third-party assets
+============================
+
+Sound effects (OpenGameArt.org), mixed into assets/intro/intro_sfx.wav
+  - "Sci-Fi Pack Vol 1" by JC Sounds — CC BY 4.0
+    https://opengameart.org/content/jc-sounds-sci-fi-pack-vol-1
+  - "Mechanical Sounds" by Brian MacIntosh (BMacZero) — CC0
+    https://opengameart.org/content/mechanical-sounds
+    (click.wav is "lightclunk1.wav" from this pack)
+  - "Iron Door" — CC0
+    https://opengameart.org/node/115136
+
+Font used in the intro artwork
+  - Oswald — SIL Open Font License 1.1 (Google Fonts)
