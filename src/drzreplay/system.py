@@ -128,3 +128,38 @@ def audio_inputs():
     """[(source name, label)] — microphones, monitors excluded."""
     return [(s["name"], s.get("description") or s["name"]) for s in _pactl_json("sources")
             if not s["name"].endswith(".monitor") and s.get("monitor_of_sink") in (None, "", "n/a")]
+
+
+def installed():
+    """True when running from the .deb (and so can be updated by the installer)."""
+    return os.path.realpath(C.PKG_DIR) == "/usr/lib/drzreplay"
+
+
+def latest_version(timeout=6):
+    """Newest release tag on GitHub, e.g. "1.2.0", or None when offline."""
+    import urllib.request
+    try:
+        req = urllib.request.Request(f"https://github.com/{C.REPO}/releases/latest", method="HEAD",
+                                     headers={"User-Agent": C.APP_NAME})
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            tag = r.geturl().rstrip("/").rsplit("/", 1)[-1]
+    except Exception:
+        return None
+    return tag.lstrip("v") if re.fullmatch(r"v?\d+(\.\d+)*", tag) else None
+
+
+def version_tuple(v):
+    return tuple(int(p) for p in re.findall(r"\d+", v or "0"))
+
+
+def run_in_terminal(command):
+    """Open a terminal window running a shell command (for the updater's sudo prompt)."""
+    import shutil
+    sh = ["sh", "-c", command + '; echo; printf "Press Enter to close… "; read x']
+    for term, flag in (("x-terminal-emulator", "-e"), ("i3-sensible-terminal", "-e"), ("xfce4-terminal", "-x"),
+                       ("gnome-terminal", "--"), ("konsole", "-e"), ("kitty", None), ("alacritty", "-e"),
+                       ("xterm", "-e")):
+        if shutil.which(term):
+            subprocess.Popen([term] + ([flag] if flag else []) + sh, start_new_session=True)
+            return True
+    return False

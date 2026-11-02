@@ -27,7 +27,13 @@ class Tray:
         self.item_intro = Gtk.CheckMenuItem(label="Intro")
         self.item_intro.set_active(bool(self.d.cfg["intro"]))
         self.item_intro.connect("toggled", lambda it: self.d.set_option("intro", it.get_active()))
-        items = [self.item_save, self.item_pause, self.item_intro, Gtk.SeparatorMenuItem()]
+        self.item_short = []
+        for sec in (15, 30):
+            it = Gtk.MenuItem(label=f"Save last {sec} s")
+            it.connect("activate", lambda _i, s=sec: self.d.save(seconds=s))
+            self.item_short.append(it)
+        items = [self.item_save] + self.item_short + [Gtk.SeparatorMenuItem(), self.item_pause, self.item_intro,
+                                                      Gtk.SeparatorMenuItem()]
         for label, cb in (("Open folder", self.d.open_folder), ("Settings", self.d.open_settings)):
             it = Gtk.MenuItem(label=label)
             it.connect("activate", cb)
@@ -63,7 +69,9 @@ class Tray:
         if self.item_intro.get_active() != bool(d.cfg["intro"]):
             self.item_intro.set_active(bool(d.cfg["intro"]))
         self.item_save.set_label(f"Save replay ({pretty(d.cfg['hotkey'])})")
-        self.item_save.set_sensitive(not d.paused and d.state == "recording")
+        on = not d.paused and d.state == "recording"
+        for it in [self.item_save] + self.item_short:
+            it.set_sensitive(on)
         if self.icon:
             self.icon.set_tooltip_text(f"{C.APP_NAME}: " + ("paused" if d.paused else "recording"))
 

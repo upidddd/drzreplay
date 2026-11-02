@@ -178,6 +178,8 @@ def main(args):
         notify(cfg, "Recording is paused." if paused else "Recording is off.", "dialog-error", "critical")
         return 1
     want = float(cfg["seconds"])
+    if "--seconds" in args:            # "save last 15 s" from the tray / settings
+        want = min(want, float(args[args.index("--seconds") + 1]))
 
     # copy the needed chunks (newest first) so the recorder cannot overwrite them mid-export
     snap = os.path.join(C.RUNTIME, "snap")

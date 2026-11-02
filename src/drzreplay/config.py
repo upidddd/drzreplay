@@ -7,7 +7,9 @@ import sys
 
 APP_NAME = "DrzReplay"
 APP_ID = "com.drz.DrzReplay"
-VERSION = "1.1.2"
+VERSION = "1.2.0"
+REPO = "upidddd/drzreplay"
+INSTALL_CMD = f"curl -fsSL https://github.com/{REPO}/releases/latest/download/install.sh | sh"
 
 PKG_DIR = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 ASSETS = os.path.join(PKG_DIR, "assets")
@@ -17,6 +19,7 @@ CLICK_SOUND = os.path.join(ASSETS, "sounds", "click.wav")
 
 CONF_DIR = os.path.join(os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config"), "drzreplay")
 CONF_PATH = os.path.join(CONF_DIR, "config.json")
+CACHE_DIR = os.path.join(os.environ.get("XDG_CACHE_HOME") or os.path.expanduser("~/.cache"), "drzreplay")
 RUNTIME = os.environ.get("DRZREPLAY_RUNTIME") or f"/dev/shm/drzreplay-{os.getuid()}"
 PIDFILE = os.path.join(RUNTIME, "daemon.pid")
 STATUSFILE = os.path.join(RUNTIME, "status.json")

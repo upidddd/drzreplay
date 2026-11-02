@@ -7,7 +7,7 @@ usage: drzreplay [command]
   start          start the recorder in the background if it is not running
   stop           stop the recorder
   restart        restart the recorder
-  save           save a replay now
+  save [--seconds N]  save a replay now (optionally only the last N seconds)
   status         show what the recorder is doing
   preview-intro  play the intro animation
   --version

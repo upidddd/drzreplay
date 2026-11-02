@@ -237,10 +237,11 @@ class Daemon:
         self.hk_proc = None
 
     # ------------------------------------------------------------ actions
-    def save(self, *_):
+    def save(self, *_, seconds=None):
         with open(C.HOTKEY_LOG, "a") as f:
             f.write(f"{time.strftime('%H:%M:%S')} save\n")
-        subprocess.Popen([sys.executable, "-m", "drzreplay", "save"], env=C.child_env(),
+        extra = ["--seconds", str(seconds)] if seconds else []
+        subprocess.Popen([sys.executable, "-m", "drzreplay", "save"] + extra, env=C.child_env(),
                          start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         return False
 
