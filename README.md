@@ -33,7 +33,8 @@ When you want to keep the moment, one key saves it.
   The last minute lives in RAM (10–100 MB), the disk is only touched when you save.
 - **One key.** Alt+Z (or any key you pick) works everywhere, including fullscreen games that
   grab the keyboard. Press it twice and you get two clips — nothing is lost.
-- **Shorter clips.** Save just the last 15 or 30 seconds from the tray or the Record tab.
+- **Any length.** Save just the last N seconds — pick N under *Save replay → Save last…*;
+  the tray remembers it as *Save last N s*.
 - **Sound.** System sound and your microphone, each with its own device and volume.
 - **Clips tab.** Thumbnails, length and size of every clip. Click to play, **drag a clip
   straight into Discord or Telegram**, copy it, show it in the folder or move it to the trash.
@@ -70,7 +71,7 @@ starts recording right away; from then on it starts with your computer.
 | | |
 |---|---|
 | **Alt+Z** | save the last minute (length is set on the Record tab) |
-| **Tray icon** | right click: save, save last 15 / 30 s, pause, folder, settings |
+| **Tray icon** | right click: save, save last N s, pause, folder, settings |
 | **Middle click on the tray icon** | save |
 | **Menu → DrzReplay** | the window with the Record, Clips and Settings tabs |
 

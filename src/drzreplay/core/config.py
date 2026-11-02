@@ -7,7 +7,7 @@ import sys
 
 APP_NAME = "DrzReplay"
 APP_ID = "com.drz.DrzReplay"
-VERSION = "1.3.1"
+VERSION = "1.3.2"
 REPO = "upidddd/drzreplay"
 INSTALL_CMD = f"curl -fsSL https://github.com/{REPO}/releases/latest/download/install.sh | sh"
 
@@ -79,6 +79,7 @@ DEFAULTS = {
     # intro
     "intro": False,
     "intro_volume": 100,
+    "custom_seconds": 20,    # "Save last N s" in the tray / Save menu
 }
 
 # changing any of these needs the recorder (ffmpeg) to restart

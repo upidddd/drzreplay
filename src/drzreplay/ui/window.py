@@ -152,9 +152,8 @@ class Window(Adw.ApplicationWindow):
         tv.set_content(self.toasts)
         self.set_content(tv)
 
-        for name, cb, ptype in (("save", lambda *_: self.on_save(), None),
-                                ("save-short", lambda _a, v: self.on_save(v.get_int32()), GLib.VariantType.new("i"))):
-            a = Gio.SimpleAction.new(name, ptype)
+        for name, cb in (("save", lambda *_: self.on_save()), ("save-custom", lambda *_: self.ask_seconds())):
+            a = Gio.SimpleAction.new(name, None)
             a.connect("activate", cb)
             self.add_action(a)
 
@@ -303,10 +302,10 @@ class Window(Adw.ApplicationWindow):
 
         g = Adw.PreferencesGroup()
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, halign=Gtk.Align.CENTER, margin_top=6)
-        short = Gio.Menu()
-        for sec in (15, 30):
-            short.append(f"Save last {sec} s", f"win.save-short({sec})")
-        self.save_btn = Adw.SplitButton(label="Save replay", menu_model=short, action_name="win.save")
+        menu = Gio.Menu()
+        menu.append("Save last…", "win.save-custom")
+        self.save_btn = Adw.SplitButton(label="Save replay", menu_model=menu, action_name="win.save",
+                                        dropdown_tooltip="Save only the last few seconds")
         self.save_btn.add_css_class("suggested-action")
         self.save_btn.add_css_class("save")
         box.append(self.save_btn)
@@ -581,6 +580,30 @@ class Window(Adw.ApplicationWindow):
             self.flush()
         subprocess.Popen(C.launcher() + [cmd], start_new_session=True,
                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+    def ask_seconds(self):
+        """Save only the last N seconds; N is remembered for the tray menu too."""
+        top = int(self.cfg["seconds"])
+        dlg = Adw.AlertDialog(heading="Save the last…")
+        adj = Gtk.Adjustment(value=min(int(self.cfg["custom_seconds"]), top), lower=1, upper=top,
+                             step_increment=1, page_increment=10)
+        row = Adw.SpinRow(title="Seconds", subtitle=f"Up to {top}", adjustment=adj)
+        lst = Gtk.ListBox(css_classes=["boxed-list"], selection_mode=Gtk.SelectionMode.NONE)
+        lst.append(row)
+        dlg.set_extra_child(lst)
+        dlg.add_response("cancel", "Cancel")
+        dlg.add_response("save", "Save")
+        dlg.set_response_appearance("save", Adw.ResponseAppearance.SUGGESTED)
+        dlg.set_default_response("save")
+
+        def done(_d, resp):
+            if resp == "save":
+                sec = int(row.get_value())
+                self.set("custom_seconds", sec)
+                self.on_save(sec)
+
+        dlg.connect("response", done)
+        dlg.present(self)
 
     def on_save(self, seconds=None):
         extra = ["--seconds", str(seconds)] if seconds else []
