@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="src/assets/icons/drzreplay.svg" width="96" alt="">
+<img src="src/drzreplay/assets/icons/drzreplay.svg" width="96" alt="">
 
 # DrzReplay
 
@@ -38,7 +38,8 @@ When you want to keep the moment, one key saves it.
 - **Clips tab.** Thumbnails, length and size of every clip. Click to play, **drag a clip
   straight into Discord or Telegram**, copy it, show it in the folder or move it to the trash.
 - **Clean up by itself.** Keep only the last N clips or at most N GB.
-- **Updates.** The app tells you when a new version is out; one click starts the installer.
+- **Updates.** When a new version is out you get a notification and an *Update* item in the tray;
+  one click starts the installer.
 - **Works on** XFCE, KDE, Cinnamon, MATE, GNOME on Xorg and tiling window managers like **i3**.
 
 
@@ -149,6 +150,25 @@ drzreplay start|stop|restart   control the background recorder
 drzreplay status               what the recorder is doing
 ```
 
+## Project layout
+
+```
+src/drzreplay/
+├── __main__.py        command line: drzreplay [save|start|stop|status…]
+├── core/              settings, paths, machine probing, autostart, update check
+├── recorder/          background recorder, hotkey helper, saving clips
+├── ui/                window (Record / Clips / Settings) and tray icon
+└── assets/            icons, sounds, intro video
+packaging/
+├── debian/            control file and maintainer scripts of the .deb
+├── files/             launcher, .desktop entries
+├── build-deb.sh       build the package
+├── release.sh         build and publish a GitHub release
+└── install.sh         the one-line installer
+tools/intro/           renderer of the intro animation (fonts, sounds)
+docs/                  screenshots for this page
+```
+
 ## Building
 
 ```sh
@@ -163,6 +183,6 @@ It needs `python3-gi gir1.2-gtk-4.0 gir1.2-adw-1 ffmpeg x11-xserver-utils pulsea
 
 Sounds from OpenGameArt.org: "Sci-Fi Pack Vol 1" by JC Sounds (CC BY 4.0),
 "Mechanical Sounds" by Brian MacIntosh (CC0) and "Iron Door" (CC0).
-Font: Oswald (SIL OFL). Details in [`src/assets/CREDITS.txt`](src/assets/CREDITS.txt).
+Font: Oswald (SIL OFL). Details in [`src/drzreplay/assets/CREDITS.txt`](src/drzreplay/assets/CREDITS.txt).
 
 Code: [MIT](LICENSE).

@@ -1,10 +1,10 @@
 #!/bin/sh
 # Build the .deb and publish it as a GitHub release  —  usage: packaging/release.sh
-# Needs `gh` logged in. Bump VERSION in src/drzreplay/config.py first.
+# Needs `gh` logged in. Bump VERSION in src/drzreplay/core/config.py first.
 set -e
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
-VERSION="$(PYTHONPATH=src python3 -c 'from drzreplay.config import VERSION; print(VERSION)')"
+VERSION="$(PYTHONPATH=src python3 -c 'from drzreplay.core.config import VERSION; print(VERSION)')"
 REPO="$(gh repo view --json nameWithOwner -q .nameWithOwner)"
 DEB="$(packaging/build-deb.sh)"
 OUT="$(mktemp -d)"

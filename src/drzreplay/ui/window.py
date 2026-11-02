@@ -16,10 +16,10 @@ gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 from gi.repository import Adw, Gdk, Gio, GLib, GObject, Gtk  # noqa: E402
 
-from . import autostart  # noqa: E402
-from . import config as C  # noqa: E402
-from . import system  # noqa: E402
-from .hotkey import pretty  # noqa: E402
+from ..core import autostart  # noqa: E402
+from ..core import config as C  # noqa: E402
+from ..core import system  # noqa: E402
+from ..recorder.hotkey import pretty  # noqa: E402
 
 FPS = [(24, "24"), (30, "30"), (60, "60")]
 QUALITY = [("low", "Low"), ("balanced", "Medium"), ("high", "High"), ("ultra", "Maximum")]
@@ -30,7 +30,6 @@ MODIFIER_KEYS = {"Shift_L", "Shift_R", "Control_L", "Control_R", "Alt_L", "Alt_R
 SOLO_KEYS = {"Pause", "Scroll_Lock", "Print", "Insert"}
 MAX_CLIPS_SHOWN = 60
 THUMBS = os.path.join(C.CACHE_DIR, "thumbs")
-UPDATE_CACHE = os.path.join(C.CACHE_DIR, "update.json")
 
 CSS = b"""
 .thumb { border-radius: 6px; background: alpha(currentColor, 0.08); }
@@ -432,7 +431,7 @@ class Window(Adw.ApplicationWindow):
         self.toast("Copied — paste it into a chat")
 
     def show_in_folder(self, path):
-        from .save import show_in_folder
+        from ..recorder.save import show_in_folder
         show_in_folder(path)
 
     def trash_clip(self, path):
@@ -653,7 +652,7 @@ class Window(Adw.ApplicationWindow):
     # ------------------------------------------------------------------ updates
     def check_updates(self, manual):
         if not manual:
-            cached = C.read_json(UPDATE_CACHE, {})
+            cached = C.read_json(C.UPDATE_CACHE, {})
             if time.time() - cached.get("time", 0) < 6 * 3600:
                 self.show_update(cached.get("latest"), manual)
                 return
@@ -663,7 +662,7 @@ class Window(Adw.ApplicationWindow):
         def work():
             latest = system.latest_version()
             if latest:
-                C.write_json(UPDATE_CACHE, {"time": time.time(), "latest": latest})
+                C.write_json(C.UPDATE_CACHE, {**C.read_json(C.UPDATE_CACHE, {}), "time": time.time(), "latest": latest})
             GLib.idle_add(self.show_update, latest, manual, True)
 
         threading.Thread(target=work, daemon=True).start()

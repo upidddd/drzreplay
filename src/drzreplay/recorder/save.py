@@ -9,8 +9,8 @@ import sys
 import time
 from datetime import datetime
 
-from . import config as C
-from . import system
+from ..core import config as C
+from ..core import system
 
 
 def notify(cfg, body, icon=None, urgency="normal", replace=None, actions=None, wait=False):

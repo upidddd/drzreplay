@@ -18,7 +18,7 @@ import subprocess
 import sys
 import time
 
-from . import config as C
+from .core import config as C
 
 
 def cmd_start(args):
@@ -56,7 +56,7 @@ def cmd_restart(args):
 
 
 def cmd_status(args):
-    from .hotkey import pretty
+    from .recorder.hotkey import pretty
     pid = C.daemon_pid()
     st = C.read_json(C.STATUSFILE, {}) if pid else {}
     cfg = C.load()
@@ -74,7 +74,7 @@ def cmd_status(args):
 
 
 def cmd_preview_intro(args):
-    from .save import intro_ready
+    from .recorder.save import intro_ready
     if not intro_ready():
         print("intro files are missing", file=sys.stderr)
         return 1
@@ -107,14 +107,14 @@ def main():
         print(f"{C.APP_NAME} {C.VERSION}")
         return 0
     if cmd == "daemon":
-        from . import daemon
+        from .recorder import daemon
         return daemon.main(rest)
     if cmd == "save":
-        from . import save
+        from .recorder import save
         return save.main(rest)
     if cmd == "settings":
-        from . import gui
-        return gui.main(rest)
+        from .ui import window
+        return window.main(rest)
     table = {"start": cmd_start, "stop": cmd_stop, "restart": cmd_restart, "status": cmd_status,
              "preview-intro": cmd_preview_intro}
     if cmd not in table:

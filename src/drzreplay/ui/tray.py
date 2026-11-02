@@ -6,8 +6,8 @@ import gi
 gi.require_version("Gtk", "3.0")
 from gi.repository import Gtk  # noqa: E402
 
-from . import config as C  # noqa: E402
-from .hotkey import pretty  # noqa: E402
+from ..core import config as C  # noqa: E402
+from ..recorder.hotkey import pretty  # noqa: E402
 
 try:
     gi.require_version("AyatanaAppIndicator3", "0.1")
@@ -32,7 +32,10 @@ class Tray:
             it = Gtk.MenuItem(label=f"Save last {sec} s")
             it.connect("activate", lambda _i, s=sec: self.d.save(seconds=s))
             self.item_short.append(it)
-        items = [self.item_save] + self.item_short + [Gtk.SeparatorMenuItem(), self.item_pause, self.item_intro,
+        self.item_update = Gtk.MenuItem(label="Update")
+        self.item_update.connect("activate", self.d.run_update)
+        self.item_update.set_no_show_all(True)
+        items = [self.item_update, self.item_save] + self.item_short + [Gtk.SeparatorMenuItem(), self.item_pause, self.item_intro,
                                                       Gtk.SeparatorMenuItem()]
         for label, cb in (("Open folder", self.d.open_folder), ("Settings", self.d.open_settings)):
             it = Gtk.MenuItem(label=label)
@@ -66,6 +69,9 @@ class Tray:
     def update(self):
         d = self.d
         self.item_pause.set_label("Resume" if d.paused else "Pause")
+        if d.update:
+            self.item_update.set_label(f"Update to {d.update}…")
+        self.item_update.set_visible(bool(d.update))
         if self.item_intro.get_active() != bool(d.cfg["intro"]):
             self.item_intro.set_active(bool(d.cfg["intro"]))
         self.item_save.set_label(f"Save replay ({pretty(d.cfg['hotkey'])})")

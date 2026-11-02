@@ -867,7 +867,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--size", default="1920x1080")
     ap.add_argument("--fps", type=int, default=30)
-    ap.add_argument("--out", default=os.path.join(HERE, "..", "src", "assets", "intro"))
+    ap.add_argument("--out", default=os.path.join(HERE, "..", "..", "src", "drzreplay", "assets", "intro"))
     ap.add_argument("--still", help="через запятую: секунды для PNG-превью (поверх --bg)")
     ap.add_argument("--bg", help="картинка-фон для превью")
     ap.add_argument("--jobs", type=int, default=max(1, (os.cpu_count() or 2) - 1))

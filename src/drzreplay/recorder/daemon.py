@@ -13,8 +13,8 @@ import sys
 import threading
 import time
 
-from . import config as C
-from . import system
+from ..core import config as C
+from ..core import system
 from .hotkey import pretty
 
 try:
@@ -104,6 +104,7 @@ class Daemon:
         self.started = 0.0
         self.tray = None
         self.reexec = False
+        self.update = None          # newer version on GitHub, if any
         self.info = system.detect_encoders()
 
     # ------------------------------------------------------------ recorder
@@ -199,7 +200,7 @@ class Daemon:
             return
         self.hk_state = (accel, False, "starting")
         log = open(C.HOTKEY_LOG, "a")
-        p = subprocess.Popen([sys.executable, "-m", "drzreplay.hotkey", accel], stdout=subprocess.PIPE,
+        p = subprocess.Popen([sys.executable, "-m", "drzreplay.recorder.hotkey", accel], stdout=subprocess.PIPE,
                              stderr=log, text=True, env=C.child_env())
         self.hk_proc = p
 
@@ -249,6 +250,49 @@ class Daemon:
         if self.cfg["notifications"]:
             subprocess.Popen(["notify-send", "-a", C.APP_NAME, "-i", C.ICON_PATH, C.APP_NAME, text],
                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        return False
+
+    # ------------------------------------------------------------ updates
+    def check_update(self):
+        """Look for a new release in the background; installs from the .deb only."""
+        if not system.installed():
+            return True
+
+        def work():
+            latest = system.latest_version()
+            if latest:
+                C.write_json(C.UPDATE_CACHE, {**C.read_json(C.UPDATE_CACHE, {}), "time": time.time(), "latest": latest})
+                if system.version_tuple(latest) > system.version_tuple(C.VERSION):
+                    GLib.idle_add(self.on_update_available, latest)
+
+        threading.Thread(target=work, daemon=True).start()
+        return True
+
+    def on_update_available(self, latest):
+        self.update = latest
+        self.update_tray()
+        cache = C.read_json(C.UPDATE_CACHE, {})
+        if cache.get("notified") == latest and time.time() - cache.get("notified_at", 0) < 24 * 3600:
+            return False        # remind at most once a day
+        C.write_json(C.UPDATE_CACHE, {**cache, "notified": latest, "notified_at": time.time()})
+
+        def ask():
+            try:
+                r = subprocess.run(["notify-send", "-a", C.APP_NAME, "-i", C.ICON_PATH, "-u", "normal",
+                                    "-A", "update=Update", "-A", "default=Update", "-w", "-t", "60000",
+                                    f"{C.APP_NAME} {latest} is out", "A new version is ready to install."],
+                                   capture_output=True, text=True, timeout=120)
+            except Exception:
+                return
+            if {"update", "default"} & set(r.stdout.split()):     # the button or a click on the popup
+                GLib.idle_add(self.run_update)
+
+        threading.Thread(target=ask, daemon=True).start()
+        return False
+
+    def run_update(self, *_):
+        if not system.run_in_terminal(C.INSTALL_CMD):
+            self.notify(f"Open a terminal and run: {C.INSTALL_CMD}")
         return False
 
     def set_paused(self, paused):
@@ -307,7 +351,7 @@ class Daemon:
             self.tray = None
         if self.use_tray and self.cfg["tray"]:
             try:
-                from .tray import Tray
+                from ..ui.tray import Tray
                 self.tray = Tray(self)
             except Exception as e:
                 print(f"tray unavailable: {e}", file=sys.stderr)
@@ -355,6 +399,8 @@ class Daemon:
         self.update_tray()
         self.write_status()
         GLib.timeout_add_seconds(1, self.health)
+        GLib.timeout_add_seconds(60, lambda: (self.check_update(), False)[1])
+        GLib.timeout_add_seconds(6 * 3600, self.check_update)
         for sig, cb in ((signal.SIGHUP, self.reload), (signal.SIGUSR1, lambda *_: (self.save(), True)[1]),
                         (signal.SIGUSR2, self.upgrade), (signal.SIGTERM, self.quit), (signal.SIGINT, self.quit)):
             GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, sig, cb)
