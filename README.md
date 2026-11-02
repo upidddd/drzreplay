@@ -38,14 +38,9 @@ When you want to keep the moment, one key saves it.
 - **Clips tab.** Thumbnails, length and size of every clip. Click to play, **drag a clip
   straight into Discord or Telegram**, copy it, show it in the folder or move it to the trash.
 - **Clean up by itself.** Keep only the last N clips or at most N GB.
-- **Intro (optional).** A short animated metal gate with sound opens each replay.
 - **Updates.** The app tells you when a new version is out; one click starts the installer.
 - **Works on** XFCE, KDE, Cinnamon, MATE, GNOME on Xorg and tiling window managers like **i3**.
 
-<div align="center">
-<img src="docs/intro.gif" width="560" alt="Intro animation">
-<br><sub>The optional intro (Settings → Intro)</sub>
-</div>
 
 ## Install
 
@@ -74,7 +69,7 @@ starts recording right away; from then on it starts with your computer.
 | | |
 |---|---|
 | **Alt+Z** | save the last minute (length is set on the Record tab) |
-| **Tray icon** | right click: save, save last 15 / 30 s, pause, intro on/off, folder, settings |
+| **Tray icon** | right click: save, save last 15 / 30 s, pause, folder, settings |
 | **Middle click on the tray icon** | save |
 | **Menu → DrzReplay** | the window with the Record, Clips and Settings tabs |
 
@@ -89,7 +84,7 @@ flowchart LR
     F -->|"GPU encoding"| R[("Ring buffer in RAM<br>5-second chunks")]
     K["Alt+Z"] --> V["Save"]
     R --> V
-    V -->|"last N seconds + intro"| O["~/Videos/DrzReplay"]
+    V -->|"last N seconds"| O["~/Videos/DrzReplay"]
 ```
 
 1. A background recorder (`drzreplay daemon`) runs ffmpeg, which grabs the screen and sound and
@@ -97,7 +92,7 @@ flowchart LR
 2. A tiny helper listens for the hotkey through X11 raw input events — that is why it keeps working
    while a fullscreen game holds the keyboard.
 3. On save, the chunks are copied, glued together and trimmed to exactly the last N seconds,
-   the intro is laid on top if enabled, and the result is encoded on the GPU with low priority.
+   and the result is encoded on the GPU with low priority.
 
 ## Troubleshooting
 
@@ -152,7 +147,6 @@ drzreplay                      open the window
 drzreplay save [--seconds N]   save a replay now (optionally only the last N seconds)
 drzreplay start|stop|restart   control the background recorder
 drzreplay status               what the recorder is doing
-drzreplay preview-intro        play the intro
 ```
 
 ## Building
@@ -165,14 +159,10 @@ packaging/release.sh       # build + publish a GitHub release (needs gh)
 Run from source without installing: `PYTHONPATH=src python3 -m drzreplay`.
 It needs `python3-gi gir1.2-gtk-4.0 gir1.2-adw-1 ffmpeg x11-xserver-utils pulseaudio-utils`.
 
-The intro is pre-rendered into `src/assets/intro`. To change it, edit `tools/render_intro.py`
-(procedural metal, lights, steam and sparks with numpy/scipy/PIL) and run
-`python3 tools/render_intro.py --jobs 3`.
-
 ## Credits
 
-Sound effects from OpenGameArt.org: "Sci-Fi Pack Vol 1" by JC Sounds (CC BY 4.0),
+Sounds from OpenGameArt.org: "Sci-Fi Pack Vol 1" by JC Sounds (CC BY 4.0),
 "Mechanical Sounds" by Brian MacIntosh (CC0) and "Iron Door" (CC0).
-Intro font: Oswald (SIL OFL). Details in [`src/assets/CREDITS.txt`](src/assets/CREDITS.txt).
+Font: Oswald (SIL OFL). Details in [`src/assets/CREDITS.txt`](src/assets/CREDITS.txt).
 
 Code: [MIT](LICENSE).
