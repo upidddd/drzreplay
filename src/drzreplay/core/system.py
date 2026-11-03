@@ -130,6 +130,31 @@ def audio_inputs():
             if not s["name"].endswith(".monitor") and s.get("monitor_of_sink") in (None, "", "n/a")]
 
 
+def pulse_defaults():
+    """(default sink, default source) of the PulseAudio / PipeWire server, or (None, None)."""
+    r = run(["pactl", "info"])
+    sink = source = None
+    if r and r.returncode == 0:
+        for line in r.stdout.splitlines():
+            if line.startswith("Default Sink:"):
+                sink = line.split(":", 1)[1].strip()
+            elif line.startswith("Default Source:"):
+                source = line.split(":", 1)[1].strip()
+    return sink, source
+
+
+def pulse_streams(pids):
+    """[(source-output index, source name)] of the recording streams opened by these processes."""
+    names = {s.get("index"): s.get("name") for s in _pactl_json("sources")}
+    out = []
+    for so in _pactl_json("source-outputs"):
+        pid = (so.get("properties") or {}).get("application.process.id")
+        if pid and pid.isdigit() and int(pid) in pids:
+            src = so.get("source")
+            out.append((so.get("index"), names.get(src, src)))
+    return out
+
+
 def installed():
     """True when running from the .deb (and so can be updated by the installer)."""
     return os.path.realpath(C.PKG_DIR) == "/usr/lib/drzreplay"

@@ -7,7 +7,7 @@ import sys
 
 APP_NAME = "DrzReplay"
 APP_ID = "com.drz.DrzReplay"
-VERSION = "1.3.2"
+VERSION = "1.4.0"
 REPO = "upidddd/drzreplay"
 INSTALL_CMD = f"curl -fsSL https://github.com/{REPO}/releases/latest/download/install.sh | sh"
 

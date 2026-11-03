@@ -7,6 +7,7 @@ import fcntl
 import glob
 import math
 import os
+import shutil
 import signal
 import subprocess
 import sys
@@ -78,13 +79,27 @@ def build_cmd(cfg, enc, geom, info):
     cmd += ["-force_key_frames", f"expr:gte(t,n_forced*{C.SEGMENT})"]
     if audio:
         cmd += ["-c:a", "aac", "-b:a", "160k", "-ar", "48000", "-ac", "2"]
+    return cmd + segment_args(cfg)
+
+
+def segment_args(cfg):
+    """The ring buffer: 5-second MPEG-TS chunks in RAM, the oldest one overwritten."""
     wrap = int(math.ceil(cfg["seconds"] / C.SEGMENT)) + 3
-    cmd += ["-f", "segment", "-segment_time", str(C.SEGMENT), "-segment_wrap", str(wrap),
+    return ["-f", "segment", "-segment_time", str(C.SEGMENT), "-segment_wrap", str(wrap),
             "-segment_format", "mpegts", "-reset_timestamps", "1",
             # write every packet right away, otherwise the newest seconds sit in a 256 KB buffer
             "-segment_format_options", "flush_packets=1",
             os.path.join(C.RUNTIME, "seg_%03d.ts")]
-    return cmd
+
+
+def wayland_ffmpeg_cmd(cfg):
+    """ffmpeg only cuts GStreamer's finished stream into the ring buffer on Wayland."""
+    # a still screen may send its first frame late: give the probe time to see the video, and insist on it
+    # (without -map 0:v ffmpeg would quietly record sound only)
+    audio = ["-map", "0:a"] if cfg["system_audio"] or cfg["mic"] else []
+    return ["ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error", "-probesize", "32M",
+            "-analyzeduration", "8000000", "-f", "mpegts", "-i", "-", "-map", "0:v"] + audio + \
+        ["-c", "copy"] + segment_args(cfg)
 
 
 class Daemon:
@@ -105,7 +120,11 @@ class Daemon:
         self.tray = None
         self.reexec = False
         self.update = None          # newer version on GitHub, if any
-        self.info = system.detect_encoders()
+        self.wayland = system.is_wayland()
+        self.cast = None            # Wayland screen-sharing session
+        self.shortcuts = None
+        self.gst_proc = None
+        self.info = self.wayland_encoders() if self.wayland else system.detect_encoders()
 
     # ------------------------------------------------------------ recorder
     def clear_buffer(self):
@@ -118,8 +137,8 @@ class Daemon:
     def start_recorder(self):
         self.stop_recorder()
         self.clear_buffer()
-        if system.is_wayland():
-            self.state, self.error = "error", "Wayland session: screen capture needs an X11 (Xorg) session."
+        if self.wayland:
+            self.start_wayland()
             return
         order = system.encoder_order(self.cfg, self.info)
         self.enc = order[min(self.fails // 2, len(order) - 1)]
@@ -135,6 +154,92 @@ class Daemon:
                                      preexec_fn=lambda: os.nice(5))
         self.state, self.error = "recording", ""
 
+    # ------------------------------------------------------------ Wayland
+    def wayland_encoders(self):
+        from . import wayland as WL
+        # GStreamer's encoders, kept apart from ffmpeg's (saving still encodes with ffmpeg)
+        cache = os.path.join(C.RUNTIME, "gst_encoders.json")
+        cached = C.read_json(cache)
+        if cached and time.time() - cached.get("time", 0) < 24 * 3600:
+            return cached
+        res = {"available": WL.gst_encoders() or ["x264"], "vaapi_device": None, "time": time.time()}
+        try:
+            C.write_json(cache, res)
+        except OSError:
+            pass
+        return res
+
+    def start_wayland(self):
+        from . import wayland as WL
+        if self.cast is None:
+            need = WL.missing_parts()
+            if need:
+                self.state, self.error = "error", "Wayland capture needs: sudo apt install " + " ".join(need)
+                return
+            try:
+                self.cast = WL.ScreenCast(self.on_cast_ready, self.on_cast_error, self.on_cast_closed,
+                                          cursor=self.cfg["draw_mouse"])
+                if not self.cast.available():
+                    raise RuntimeError("no screen-sharing portal (install xdg-desktop-portal for your desktop)")
+                self.cast.start()
+            except Exception as e:
+                self.cast = None
+                self.state, self.error = "error", f"Screen sharing: {e}"
+                return
+            self.state, self.error = "starting", "Choose the screen to record in the dialog"
+            return
+        if not self.cast.streams:
+            return                                # still waiting for the dialog
+        node, props = self.cast.streams[0]
+        order = system.encoder_order(self.cfg, self.info)
+        self.enc = order[min(self.fails // 2, len(order) - 1)]
+        cfg = dict(self.cfg)
+        if self.audio_off:
+            cfg["system_audio"] = cfg["mic"] = False
+        try:
+            fd = self.cast.open_remote()
+        except Exception as e:
+            self.state, self.error = "error", f"Screen sharing: {e}"
+            self.cast = None
+            return
+        gst = WL.gst_cmd(cfg, self.enc, node, fd)
+        ff = wayland_ffmpeg_cmd(cfg)
+        with open(C.FFMPEG_LOG, "ab") as log:
+            log.write(f"\n--- {time.ctime()} {' '.join(gst)}\n    | {' '.join(ff)}\n".encode())
+        self.started = time.time()
+        self.gst_proc = subprocess.Popen(gst, stdout=subprocess.PIPE, stderr=open(C.FFMPEG_LOG, "ab"),
+                                         pass_fds=(fd,), preexec_fn=lambda: os.nice(5))
+        os.close(fd)
+        self.proc = subprocess.Popen(ff, stdin=self.gst_proc.stdout, stdout=subprocess.DEVNULL,
+                                     stderr=open(C.FFMPEG_LOG, "ab"), preexec_fn=lambda: os.nice(5))
+        self.gst_proc.stdout.close()
+        w, h = props.get("size", (0, 0))
+        self.geom = (w, h, 0, 0)
+        self.state, self.error = "recording", ""
+
+    def on_cast_ready(self, _streams):
+        if not self.paused:
+            self.start_recorder()
+        self.update_tray()
+        self.write_status()
+
+    def on_cast_error(self, msg):
+        self.cast = None
+        self.stop_recorder()
+        self.state = "error"
+        self.error = "Screen sharing was not allowed" if msg == "cancelled" else f"Screen sharing: {msg}"
+        self.update_tray()
+        self.write_status()
+
+    def on_cast_closed(self):
+        self.cast = None
+        self.stop_recorder()
+        self.clear_buffer()
+        self.state, self.error = "error", "Screen sharing was stopped"
+        self.notify("Screen sharing was stopped. Turn recording back on in DrzReplay.")
+        self.update_tray()
+        self.write_status()
+
     def kill_stale_recorders(self):
         """An ffmpeg left behind by a recorder that was killed would keep filling the buffer."""
         target = os.path.join(C.RUNTIME, "seg_").encode()
@@ -148,23 +253,27 @@ class Daemon:
                 pass
 
     def stop_recorder(self):
-        if self.proc and self.proc.poll() is None:
-            self.proc.send_signal(signal.SIGINT)
-            try:
-                self.proc.wait(5)
-            except subprocess.TimeoutExpired:
-                self.proc.kill()
-        self.proc = None
+        if self.gst_proc and self.gst_proc.poll() is None:
+            self.gst_proc.terminate()
+        for p in (self.proc, self.gst_proc):
+            if p and p.poll() is None:
+                p.send_signal(signal.SIGINT)
+                try:
+                    p.wait(5)
+                except subprocess.TimeoutExpired:
+                    p.kill()
+        self.proc = self.gst_proc = None
 
     def health(self):
-        if self.paused or (self.state == "error" and self.proc is None):
-            self.write_status()
+        if self.paused or (self.state == "error" and self.proc is None) or (
+                self.wayland and self.proc is None and self.state == "starting"):
+            self.write_status()             # paused, broken, or waiting for the screen-sharing dialog
             return True
         if self.proc and self.proc.poll() is None:
             if time.time() - self.started > 20:
                 self.fails = 0
             # monitor layout changed -> restart with the new geometry
-            if int(time.time()) % 5 == 0 and system.capture_geometry(self.cfg) != self.geom:
+            if not self.wayland and int(time.time()) % 5 == 0 and system.capture_geometry(self.cfg) != self.geom:
                 self.start_recorder()
             self.write_status()
             return True
@@ -191,12 +300,62 @@ class Daemon:
         except OSError:
             return "unknown error"
 
+    # ------------------------------------------------------------ sound devices
+    def recorder_pids(self):
+        return {p.pid for p in (self.proc, getattr(self, "gst_proc", None)) if p and p.poll() is None}
+
+    def start_audio_follow(self):
+        """Keep recording what you hear when the default device changes (headphones plugged in…):
+        our recording streams are moved to the new device, no restart, the buffer is kept."""
+        if not shutil.which("pactl"):
+            return
+        self.defaults = system.pulse_defaults()
+        try:
+            p = subprocess.Popen(["pactl", "subscribe"], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                                 text=True)
+        except OSError:
+            return
+        self.sub_proc = p
+
+        def reader():
+            for line in p.stdout:
+                if "on server" in line:
+                    GLib.idle_add(self.follow_default)
+
+        threading.Thread(target=reader, daemon=True).start()
+
+    def follow_default(self):
+        new = system.pulse_defaults()
+        if new == self.defaults or None in new:
+            return False
+        self.defaults = new
+        sink, source = new
+        for idx, src in system.pulse_streams(self.recorder_pids()):
+            if not src:
+                continue
+            if src.endswith(".monitor"):
+                target = sink + ".monitor" if self.cfg["system_audio"] and not self.cfg["system_device"] else None
+            else:
+                target = source if self.cfg["mic"] and not self.cfg["mic_device"] else None
+            if target and target != src:
+                system.run(["pactl", "move-source-output", str(idx), target])
+        return False
+
+    def stop_audio_follow(self):
+        p = getattr(self, "sub_proc", None)
+        if p and p.poll() is None:
+            p.terminate()
+        self.sub_proc = None
+
     # ------------------------------------------------------------ hotkey
     def start_hotkey(self):
         self.stop_hotkey()
         accel = self.cfg["hotkey"]
-        if not accel or system.is_wayland():
+        if not accel:
             self.hk_state = (accel, False, "no hotkey")
+            return
+        if self.wayland:
+            self.start_portal_hotkey(accel)
             return
         self.hk_state = (accel, False, "starting")
         log = open(C.HOTKEY_LOG, "a")
@@ -227,6 +386,26 @@ class Daemon:
 
         threading.Thread(target=reader, daemon=True).start()
 
+    def start_portal_hotkey(self, accel):
+        from . import wayland as WL
+        self.hk_state = (accel, False, "starting")
+
+        def state(ok, err):
+            self.hk_state = (accel, ok, err)
+            self.write_status()
+
+        try:
+            self.shortcuts = WL.Shortcuts(accel, self.save_debounced, state)
+            self.shortcuts.start()
+        except Exception as e:
+            state(False, str(e))
+
+    def save_debounced(self):
+        now = time.time()
+        if now - getattr(self, "_last_press", 0) > 0.5:
+            self._last_press = now
+            self.save()
+
     def revive_hotkey(self, p):
         if self.hk_proc is p:      # the helper died on its own: bring the hotkey back
             self.start_hotkey()
@@ -236,6 +415,9 @@ class Daemon:
         if self.hk_proc and self.hk_proc.poll() is None:
             self.hk_proc.terminate()
         self.hk_proc = None
+        if self.shortcuts:
+            self.shortcuts.close()
+            self.shortcuts = None
 
     # ------------------------------------------------------------ actions
     def save(self, *_, seconds=None):
@@ -374,6 +556,10 @@ class Daemon:
         return self.quit()
 
     def quit(self, *_):
+        if self.cast:
+            self.cast.close()
+            self.cast = None
+        self.stop_audio_follow()
         self.stop_hotkey()
         self.stop_recorder()
         self.clear_buffer()
@@ -396,6 +582,7 @@ class Daemon:
         self.setup_tray()
         self.start_recorder()
         self.start_hotkey()
+        self.start_audio_follow()
         self.update_tray()
         self.write_status()
         GLib.timeout_add_seconds(1, self.health)

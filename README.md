@@ -9,7 +9,7 @@ press **Alt+Z** and the last minute becomes a video file.
 
 [![Release](https://img.shields.io/github/v/release/upidddd/drzreplay?style=flat-square&color=2b3033)](https://github.com/upidddd/drzreplay/releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/upidddd/drzreplay/total?style=flat-square&color=2b3033)](https://github.com/upidddd/drzreplay/releases)
-[![Platform](https://img.shields.io/badge/Linux-X11-2b3033?style=flat-square&logo=linux&logoColor=white)](#requirements)
+[![Platform](https://img.shields.io/badge/Linux-X11%20%7C%20Wayland-2b3033?style=flat-square&logo=linux&logoColor=white)](#requirements)
 [![License](https://img.shields.io/github/license/upidddd/drzreplay?style=flat-square&color=2b3033)](LICENSE)
 
 ```sh
@@ -35,13 +35,16 @@ When you want to keep the moment, one key saves it.
   grab the keyboard. Press it twice and you get two clips — nothing is lost.
 - **Any length.** Save just the last N seconds — pick N under *Save replay → Save last…*;
   the tray remembers it as *Save last N s*.
-- **Sound.** System sound and your microphone, each with its own device and volume.
+- **Sound.** System sound and your microphone, each with its own device and volume. Works with
+  PulseAudio and PipeWire; plug in headphones and recording follows them without a restart.
 - **Clips tab.** Thumbnails, length and size of every clip. Click to play, **drag a clip
   straight into Discord or Telegram**, copy it, show it in the folder or move it to the trash.
+- **Trim.** The scissors on a clip open it with a player: pick the start and the end, get a trimmed copy.
 - **Clean up by itself.** Keep only the last N clips or at most N GB.
 - **Updates.** When a new version is out you get a notification and an *Update* item in the tray;
   one click starts the installer.
-- **Works on** XFCE, KDE, Cinnamon, MATE, GNOME on Xorg and tiling window managers like **i3**.
+- **Works on** XFCE, KDE, Cinnamon, MATE, GNOME and tiling window managers like **i3** — on Xorg
+  and on **Wayland**.
 
 
 ## Install
@@ -63,7 +66,8 @@ starts recording right away; from then on it starts with your computer.
 ### Requirements
 
 - Debian 13, Devuan 6, Ubuntu 24.04 or newer (and distros based on them: Mint, Pop!_OS…)
-- An **X11 (Xorg)** session. Wayland is not supported — pick an "Xorg" session on the login screen.
+- An **X11 (Xorg)** or **Wayland** session. On Wayland the desktop asks once which screen to share
+  (GNOME, KDE Plasma and other desktops with xdg-desktop-portal); the answer is remembered.
 - Any graphics card. Without NVENC / VA-API the CPU encoder (x264) is used.
 
 ## Using it
@@ -81,7 +85,7 @@ Clips go to `~/Videos/DrzReplay` as `DrzReplay 2026-11-02 17-20-10.mp4`.
 
 ```mermaid
 flowchart LR
-    A["X11 screen"] -->|"30 fps"| F["ffmpeg"]
+    A["Screen<br>X11 or Wayland (PipeWire)"] -->|"30 fps"| F["ffmpeg / GStreamer"]
     S["System sound, mic"] --> F
     F -->|"GPU encoding"| R[("Ring buffer in RAM<br>5-second chunks")]
     K["Alt+Z"] --> V["Save"]
@@ -91,8 +95,10 @@ flowchart LR
 
 1. A background recorder (`drzreplay daemon`) runs ffmpeg, which grabs the screen and sound and
    writes 5-second chunks to `/dev/shm` (RAM). The oldest chunk is overwritten, so memory use stays flat.
-2. A tiny helper listens for the hotkey through X11 raw input events — that is why it keeps working
-   while a fullscreen game holds the keyboard.
+   On Wayland the screen comes from the desktop's screen-sharing portal: GStreamer records it together
+   with the sound (one clock, so they stay in sync) and ffmpeg writes the same chunks.
+2. On X11 a tiny helper listens for the hotkey through raw input events — that is why it keeps working
+   while a fullscreen game holds the keyboard. On Wayland the desktop's global-shortcuts portal does it.
 3. On save, the chunks are copied, glued together and trimmed to exactly the last N seconds,
    and the result is encoded on the GPU with low priority.
 
@@ -116,10 +122,14 @@ notification and on the Record tab.
 </details>
 
 <details>
-<summary><b>"Screen capture needs an Xorg session"</b></summary>
+<summary><b>Wayland: the hotkey or the screen</b></summary>
 
-You are on Wayland. Log out, pick the *Xorg* / *X11* variant of your desktop on the login screen,
-and log in again.
+- **Screen:** the first start shows the desktop's screen-sharing dialog; pick a screen there.
+  To pick another one later: Record tab → Screen → *Choose again*.
+- **Hotkey:** GNOME 48+ and KDE Plasma 6 offer DrzReplay a global shortcut (confirm it once).
+  On other desktops add a keyboard shortcut in the system settings that runs `drzreplay save`.
+- Missing parts are named in the Record tab; on Debian / Ubuntu:
+  `sudo apt install gstreamer1.0-pipewire gstreamer1.0-plugins-good gstreamer1.0-libav xdg-desktop-portal`
 </details>
 
 <details>
@@ -157,7 +167,7 @@ drzreplay status               what the recorder is doing
 src/drzreplay/
 ├── __main__.py        command line: drzreplay [save|start|stop|status…]
 ├── core/              settings, paths, machine probing, autostart, update check
-├── recorder/          background recorder, hotkey helper, saving clips
+├── recorder/          background recorder, Wayland capture, hotkey, saving and trimming clips
 ├── ui/                window (Record / Clips / Settings) and tray icon
 └── assets/            icons, sounds, intro video
 packaging/

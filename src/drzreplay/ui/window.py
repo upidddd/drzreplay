@@ -78,15 +78,23 @@ class ThumbLoader:
 
     def __init__(self):
         self.q = queue.Queue()
+        self.pending = set()
+        self.lock = threading.Lock()
         os.makedirs(THUMBS, exist_ok=True)
         threading.Thread(target=self.work, daemon=True).start()
 
     def request(self, path, cb):
+        with self.lock:
+            if path in self.pending:
+                return
+            self.pending.add(path)
         self.q.put((path, cb))
 
     def work(self):
         while True:
             path, cb = self.q.get()
+            with self.lock:
+                self.pending.discard(path)
             try:
                 st = os.stat(path)
             except OSError:
@@ -122,6 +130,8 @@ class Window(Adw.ApplicationWindow):
         self.enc_info = system.detect_encoders()
         self.thumbs = ThumbLoader()
         self._clips_sig = None
+        self._clip_rows = {}        # (path, mtime, size) -> row, reused between refreshes
+        self._last_refresh = 0.0
         self.latest = None
 
         css = Gtk.CssProvider()
@@ -139,8 +149,6 @@ class Window(Adw.ApplicationWindow):
 
         tv = Adw.ToolbarView()
         tv.add_top_bar(header)
-        if system.is_wayland():
-            tv.add_top_bar(Adw.Banner(revealed=True, title="Screen capture needs an Xorg session"))
         self.update_banner = Adw.Banner(button_label="Update")
         self.update_banner.connect("button-clicked", self.run_update)
         tv.add_top_bar(self.update_banner)
@@ -316,10 +324,16 @@ class Window(Adw.ApplicationWindow):
 
         g = Adw.PreferencesGroup(title="Video")
         g.add(self.spin("Length", "Seconds kept in memory", "seconds", 10, 600, 5))
-        screens = [("all", "All screens")] + [(m["name"], f"{m['name']} ({m['w']}×{m['h']})")
-                                              for m in system.monitors()]
-        if len(screens) > 2:
-            g.add(self.combo("Screen", "monitor", screens))
+        if system.is_wayland():
+            # the desktop's screen-sharing dialog picks the screen; it is remembered until asked again
+            row = Adw.ActionRow(title="Screen", subtitle="Picked in the screen-sharing dialog")
+            row.add_suffix(self.button("Choose again", cb=self.choose_screen))
+            g.add(row)
+        else:
+            screens = [("all", "All screens")] + [(m["name"], f"{m['name']} ({m['w']}×{m['h']})")
+                                                  for m in system.monitors()]
+            if len(screens) > 2:
+                g.add(self.combo("Screen", "monitor", screens))
         g.add(self.combo("Frame rate", "fps", FPS))
         g.add(self.combo("Quality", "rec_quality", QUALITY))
         encs = [("auto", "Auto")] + [(e, system.ENCODER_LABELS[e]) for e in self.enc_info["available"]]
@@ -346,7 +360,7 @@ class Window(Adw.ApplicationWindow):
         page = Adw.PreferencesPage()
         self.clips_group = Adw.PreferencesGroup(title="Saved clips")
         hs = Gtk.Box(spacing=6)
-        hs.append(self.button(icon="view-refresh-symbolic", tip="Refresh", cb=lambda *_: self.load_clips(True)))
+        hs.append(self.button(icon="view-refresh-symbolic", tip="Refresh", cb=self.refresh_clips))
         hs.append(self.button(icon="folder-open-symbolic", tip="Open folder", cb=lambda *_: self.open_dir()))
         self.clips_group.set_header_suffix(hs)
         self.clips_list = Gtk.ListBox(selection_mode=Gtk.SelectionMode.NONE, css_classes=["boxed-list"])
@@ -374,9 +388,18 @@ class Window(Adw.ApplicationWindow):
                 pass
         return sorted(out, reverse=True)
 
+    def refresh_clips(self, *_):
+        # the button may be hammered: one rescan per half second is plenty
+        now = time.monotonic()
+        if now - self._last_refresh < 0.5:
+            return
+        self._last_refresh = now
+        self.load_clips()
+
     def load_clips(self, force=False):
         clips = self.clip_files()
-        sig = (C.output_dir(self.cfg), tuple((p, m, s) for m, s, p in clips[:MAX_CLIPS_SHOWN]))
+        shown = clips[:MAX_CLIPS_SHOWN]
+        sig = (C.output_dir(self.cfg), tuple((p, m, s) for m, s, p in shown), len(clips))
         if sig == self._clips_sig and not force:
             return
         self._clips_sig = sig
@@ -386,10 +409,15 @@ class Window(Adw.ApplicationWindow):
         self.clips_empty.set_description(f"Press {pretty(self.cfg['hotkey'])} to save the last "
                                          f"{self.cfg['seconds']} seconds")
         self.clips_stack.set_visible_child_name("list" if clips else "empty")
+        # rows are built once per clip and reused; only new clips get a new row (and a thumbnail)
         while (child := self.clips_list.get_first_child()) is not None:
             self.clips_list.remove(child)
-        for mtime, size, path in clips[:MAX_CLIPS_SHOWN]:
-            self.clips_list.append(self.clip_row(path, mtime, size))
+        rows = {}
+        for mtime, size, path in shown:
+            key = (path, mtime, size)
+            rows[key] = self._clip_rows.get(key) or self.clip_row(path, mtime, size)
+            self.clips_list.append(rows[key])
+        self._clip_rows = rows
         hidden = len(clips) - MAX_CLIPS_SHOWN
         self.clips_more.set_visible(hidden > 0)
         if hidden > 0:
@@ -404,15 +432,20 @@ class Window(Adw.ApplicationWindow):
         pic.set_overflow(Gtk.Overflow.HIDDEN)
         row.add_prefix(pic)
 
+        row.duration = 0.0
+
         def loaded(jpg, dur):
             if jpg:
                 pic.set_filename(jpg)
             if dur:
+                row.duration = dur
                 row.set_subtitle(f"{human_time(dur)} · {human_size(size)}")
             return False
 
         self.thumbs.request(path, loaded)
         row.connect("activated", lambda *_: self.open_uri(path))
+        row.add_suffix(self.button(icon="edit-cut-symbolic", tip="Trim",
+                                   cb=lambda *_: self.trim_clip(path, row.duration)))
         row.add_suffix(self.button(icon="edit-copy-symbolic", tip="Copy (paste into Discord, Telegram…)",
                                    cb=lambda *_: self.copy_clip(path)))
         row.add_suffix(self.button(icon="folder-open-symbolic", tip="Show in folder",
@@ -424,6 +457,77 @@ class Window(Adw.ApplicationWindow):
         drag.connect("drag-begin", lambda src, _d: src.set_icon(Gtk.WidgetPaintable.new(pic), 0, 0))
         row.add_controller(drag)
         return row
+
+    def trim_clip(self, path, dur):
+        """Pick a start and an end while watching the clip, save that piece as a new file."""
+        if not dur:
+            from ..recorder.save import probe
+            dur = probe(path)[0]
+        if dur <= 0:
+            self.toast("Can't read this clip")
+            return
+        media = Gtk.MediaFile.new_for_filename(path)
+        video = Gtk.Video(media_stream=media, autoplay=False, loop=False, vexpand=True)
+        video.set_size_request(480, 270)
+
+        def spin(title, value):
+            adj = Gtk.Adjustment(value=value, lower=0, upper=dur, step_increment=0.1, page_increment=1)
+            row = Adw.SpinRow(title=title, adjustment=adj, digits=1)
+            here = self.button(icon="find-location-symbolic", tip="Use the current position")
+            here.connect("clicked", lambda *_: row.set_value(media.get_timestamp() / 1e6))
+            row.add_suffix(here)
+            return row
+
+        start, end = spin("Start, s", 0.0), spin("End, s", round(dur, 1))
+        delete = Adw.SwitchRow(title="Delete the original")
+        group = Adw.PreferencesGroup()
+        for r in (start, end, delete):
+            group.add(r)
+        length = Gtk.Label(css_classes=["dim-label"], halign=Gtk.Align.START)
+        save = Gtk.Button(label="Save trimmed copy", css_classes=["suggested-action", "pill"],
+                          halign=Gtk.Align.CENTER)
+
+        def changed(row, _p=None):
+            a, b = start.get_value(), end.get_value()
+            ok = b - a >= 0.5
+            save.set_sensitive(ok)
+            length.set_label(f"New length {human_time(b - a)}" if ok else "The end must be after the start")
+            if row is not None and media.is_prepared():
+                media.seek(int(row.get_value() * 1e6))      # show the frame being picked
+
+        start.connect("notify::value", changed)
+        end.connect("notify::value", changed)
+        changed(None)
+
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=14, margin_top=12, margin_bottom=18,
+                      margin_start=18, margin_end=18)
+        for w in (video, group, length, save):
+            box.append(w)
+        tv = Adw.ToolbarView()
+        tv.add_top_bar(Adw.HeaderBar())
+        tv.set_content(box)
+        dlg = Adw.Dialog(title="Trim", content_width=560, child=tv)
+
+        def do_save(*_):
+            a, b, rm = start.get_value(), end.get_value(), delete.get_active()
+            media.pause()
+            dlg.close()
+            self.toast("Trimming…")
+
+            def work():
+                from ..recorder.trim import trim
+                try:
+                    out = trim(path, a, b, rm)
+                    GLib.idle_add(lambda: (self.toast(f"Saved {os.path.basename(out)}"), self.load_clips(True)))
+                except Exception as e:
+                    msg = str(e)
+                    GLib.idle_add(lambda: self.toast(f"Couldn't trim: {msg}"))
+
+            threading.Thread(target=work, daemon=True).start()
+
+        save.connect("clicked", do_save)
+        dlg.connect("closed", lambda *_: media.pause())
+        dlg.present(self)
 
     def copy_clip(self, path):
         self.get_clipboard().set_content(file_provider(path))
@@ -544,7 +648,7 @@ class Window(Adw.ApplicationWindow):
         elif state == "error":
             self.rec_row.set_subtitle(st.get("error") or "Error")
         else:
-            self.rec_row.set_subtitle("Starting…")
+            self.rec_row.set_subtitle(st.get("error") or "Starting…")
 
         secs = float(st.get("seconds") or self.cfg["seconds"])
         buffered = float(st.get("buffered", 0)) if recording else 0.0
@@ -573,6 +677,12 @@ class Window(Adw.ApplicationWindow):
                 self.start_daemon("restart")
         elif pid:
             os.kill(pid, signal.SIGTERM)
+
+    def choose_screen(self, *_):
+        from ..recorder.wayland import ScreenCast
+        ScreenCast.forget()
+        self.start_daemon("restart")
+        self.toast("Choose the screen in the dialog")
 
     def start_daemon(self, cmd="start"):
         if self._flush_id:
@@ -722,7 +832,7 @@ class Window(Adw.ApplicationWindow):
         self._conf_mtime = self.conf_mtime()
         autostart.set_enabled(True)
         self.auto_row.set_active(True)
-        if not C.daemon_pid() and not system.is_wayland():
+        if not C.daemon_pid():
             self.start_daemon()
         self.toast(f"Recording. Press {pretty(self.cfg['hotkey'])} to save a replay.")
         return False
