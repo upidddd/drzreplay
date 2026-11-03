@@ -473,8 +473,26 @@ class Daemon:
         return False
 
     def run_update(self, *_):
-        if not system.run_in_terminal(C.INSTALL_CMD):
-            self.notify(f"Open a terminal and run: {C.INSTALL_CMD}")
+        """The Update button: installs in the background, no password; the package then restarts us."""
+        if getattr(self, "_updating", False):
+            return False
+        self._updating = True
+        self.notify(f"Updating to {self.update or 'the new version'}…")
+
+        def work():
+            ok, msg = system.self_update()
+            GLib.idle_add(self.update_done, ok, msg)
+
+        threading.Thread(target=work, daemon=True).start()
+        return False
+
+    def update_done(self, ok, msg):
+        self._updating = False
+        if ok is None:                    # installed before the helper existed: the old way, once
+            if not system.run_in_terminal(C.INSTALL_CMD):
+                self.notify(f"Open a terminal and run: {C.INSTALL_CMD}")
+        elif not ok:
+            self.notify(f"Update failed: {msg}")
         return False
 
     def set_paused(self, paused):
@@ -583,6 +601,11 @@ class Daemon:
         self.start_recorder()
         self.start_hotkey()
         self.start_audio_follow()
+        cache = C.read_json(C.UPDATE_CACHE, {})
+        if cache.get("running") and cache["running"] != C.VERSION:
+            self.notify(f"Updated to {C.VERSION}. Still recording.")
+        if cache.get("running") != C.VERSION:
+            C.write_json(C.UPDATE_CACHE, {**cache, "running": C.VERSION})
         self.update_tray()
         self.write_status()
         GLib.timeout_add_seconds(1, self.health)

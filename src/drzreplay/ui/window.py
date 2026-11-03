@@ -808,6 +808,7 @@ class Window(Adw.ApplicationWindow):
             self.ver_row.set_subtitle(f"Version {latest} is available")
             self.ver_btn.set_label("Update")
             self.update_banner.set_title(f"{C.APP_NAME} {latest} is available")
+            self.update_banner.set_button_label("Update")
             self.update_banner.set_revealed(True)
         elif latest:
             self.ver_row.set_subtitle("Up to date")
@@ -822,10 +823,27 @@ class Window(Adw.ApplicationWindow):
             self.check_updates(manual=True)
 
     def run_update(self, *_):
-        if not system.run_in_terminal(C.INSTALL_CMD):
-            self.toast("No terminal found. Run: " + C.INSTALL_CMD)
-            return
-        self.toast("Follow the terminal, then reopen this window")
+        self.update_banner.set_button_label(None)
+        self.update_banner.set_title("Updating…")
+        self.ver_btn.set_sensitive(False)
+
+        def done(ok, msg):
+            self.ver_btn.set_sensitive(True)
+            if ok:
+                self.update_banner.set_title("Updated. Reopen this window to see what's new")
+                self.ver_row.set_subtitle(msg)
+            elif ok is None:              # installed before the helper existed: the old way, once
+                self.update_banner.set_revealed(False)
+                if system.run_in_terminal(C.INSTALL_CMD):
+                    self.toast("Follow the terminal, then reopen this window")
+                else:
+                    self.toast("No terminal found. Run: " + C.INSTALL_CMD)
+            else:
+                self.update_banner.set_title(f"Update failed: {msg}")
+                self.update_banner.set_button_label("Try again")
+            return False
+
+        threading.Thread(target=lambda: GLib.idle_add(done, *system.self_update()), daemon=True).start()
 
     def first_run_setup(self):
         C.save(self.cfg)

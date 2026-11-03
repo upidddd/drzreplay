@@ -56,8 +56,10 @@ curl -fsSL https://github.com/upidddd/drzreplay/releases/latest/download/install
 It downloads the latest release, asks for your password and installs it. DrzReplay opens and
 starts recording right away; from then on it starts with your computer.
 
-- **Update:** run the same command again, or press *Update* in the app.
-  Settings and clips are kept; the running recorder switches to the new version by itself.
+- **Update:** press *Update* in the notification, the tray or the app — it installs in the background
+  without asking for a password, and the running recorder switches to the new version by itself.
+  Settings and clips are kept. (The package adds a sudo rule that allows exactly this: its own helper,
+  which only installs a newer official `drzreplay` package from this page.)
 - **Manual install:** download `drzreplay_*_all.deb` from
   [Releases](https://github.com/upidddd/drzreplay/releases) and run
   `sudo apt install ./drzreplay_*_all.deb`.

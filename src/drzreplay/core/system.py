@@ -177,6 +177,26 @@ def version_tuple(v):
     return tuple(int(p) for p in re.findall(r"\d+", v or "0"))
 
 
+UPDATER = "/usr/lib/drzreplay/drzreplay-update"
+
+
+def self_update():
+    """Install the newest release without a password, through the root helper the package ships
+    (allowed by /etc/sudoers.d/drzreplay). Returns (ok, message); ok is None when the helper
+    can't be used here (older install, no sudo) and the terminal installer is needed instead."""
+    import shutil
+    if not (os.path.exists(UPDATER) and shutil.which("sudo")):
+        return None, "no updater"
+    try:
+        r = subprocess.run(["sudo", "-n", UPDATER], capture_output=True, text=True, timeout=900)
+    except Exception as e:
+        return False, str(e)
+    out = (r.stdout + r.stderr).strip().splitlines()
+    if r.returncode != 0 and any("password" in l.lower() for l in out):
+        return None, "sudo wants a password"
+    return r.returncode == 0, out[-1] if out else ""
+
+
 def run_in_terminal(command):
     """Open a terminal window running a shell command (for the updater's sudo prompt)."""
     import shutil

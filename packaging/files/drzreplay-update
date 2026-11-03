@@ -1,0 +1,35 @@
+#!/bin/sh
+# Root helper behind DrzReplay's Update button (allowed without a password by /etc/sudoers.d/drzreplay).
+# It takes no arguments and can only do one thing: install the newest official DrzReplay release.
+set -eu
+PATH=/usr/sbin:/usr/bin:/sbin:/bin
+export PATH DEBIAN_FRONTEND=noninteractive
+REPO="@REPO@"
+URL="https://github.com/$REPO/releases/latest/download/drzreplay_all.deb"
+
+[ "$(id -u)" = 0 ] || { echo "run through sudo" >&2; exit 1; }
+[ $# -eq 0 ] || { echo "no arguments allowed" >&2; exit 1; }
+
+TMP="$(mktemp -d /var/tmp/drzreplay-update.XXXXXX)"
+trap 'rm -rf "$TMP"' EXIT
+DEB="$TMP/drzreplay_all.deb"
+echo "Downloading DrzReplay…"
+if command -v curl >/dev/null 2>&1; then
+    curl -fsSL --proto '=https' --tlsv1.2 -o "$DEB" "$URL"
+else
+    wget -q --https-only -O "$DEB" "$URL"
+fi
+
+# only DrzReplay itself, and only a newer version than the one installed
+[ "$(dpkg-deb -f "$DEB" Package)" = drzreplay ] || { echo "not a DrzReplay package" >&2; exit 1; }
+NEW="$(dpkg-deb -f "$DEB" Version)"
+OLD="$(dpkg-query -W -f='${Version}' drzreplay 2>/dev/null || echo 0)"
+if ! dpkg --compare-versions "$NEW" gt "$OLD"; then
+    echo "DrzReplay $OLD is up to date"
+    exit 0
+fi
+chmod 755 "$TMP"
+chmod 644 "$DEB"                       # apt's sandbox user reads the file
+echo "Installing DrzReplay $NEW…"
+apt-get install -y -q "$DEB" </dev/null
+echo "Updated to $NEW"
