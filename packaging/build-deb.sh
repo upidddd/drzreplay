@@ -15,7 +15,6 @@ install -d "$STAGE/DEBIAN" "$STAGE/usr/bin" "$STAGE/usr/lib/drzreplay" \
 
 cp -r "$ROOT/src/drzreplay" "$STAGE/usr/lib/drzreplay/"
 find "$STAGE/usr/lib/drzreplay" -name '__pycache__' -prune -exec rm -rf {} +
-rm -f "$STAGE/usr/lib/drzreplay/drzreplay/assets/intro/"*.png
 install -m 755 "$F/drzreplay.sh" "$STAGE/usr/bin/drzreplay"
 install -m 644 "$F/drzreplay.desktop" "$STAGE/usr/share/applications/com.drz.DrzReplay.desktop"
 install -m 644 "$F/drzreplay-autostart.desktop" "$STAGE/etc/xdg/autostart/drzreplay.desktop"

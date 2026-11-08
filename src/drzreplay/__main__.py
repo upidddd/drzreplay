@@ -95,22 +95,20 @@ def cmd_status(args):
 
 
 def cmd_preview_intro(args):
-    from .recorder.save import intro_ready
-    if not intro_ready():
-        print("intro files are missing", file=sys.stderr)
+    from .recorder import intro
+    if not intro.available():
+        print("the intro needs Pillow (python3-pil)", file=sys.stderr)
         return 1
     cfg = C.load()
     os.makedirs(C.RUNTIME, exist_ok=True)
-    out = os.path.join(C.RUNTIME, "intro-preview.mp4")
-    d = C.INTRO_DIR
-    iv = int(cfg["intro_volume"]) / 100
-    fc = ("color=c=0x15191e:s=1920x1080:r=30:d=6[bg];"
-          "[0:v]format=yuv444p[gc];[1:v]format=gray[ga];[gc][ga]alphamerge[g];"
-          f"[bg][g]overlay=eof_action=pass,format=yuv420p[v];[2:a]volume={iv:.2f},apad[a]")
-    r = subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", os.path.join(d, "gate_color.mp4"),
-                        "-i", os.path.join(d, "gate_alpha.mkv"), "-i", os.path.join(d, "intro_sfx.wav"),
-                        "-filter_complex", fc, "-map", "[v]", "-map", "[a]", "-t", "6",
-                        "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-c:a", "aac", out])
+    clip, out = os.path.join(C.RUNTIME, "intro-preview.mov"), os.path.join(C.RUNTIME, "intro-preview.mp4")
+    intro.render(clip, intro.next_number(cfg))
+    x, y = intro.position(1080)
+    fc = (f"gradients=s=1920x1080:c0=0x3a4552:c1=0x1d2229:x0=0:y0=0:x1=1920:y1=1080:speed=0.01:r=30:d=4[bg];"
+          f"[0:v]setpts=PTS-STARTPTS+{intro.START}/TB[ov];[bg][ov]overlay={x}:{y}:eof_action=pass,format=yuv420p[v]")
+    r = subprocess.run(["ffmpeg", "-nostdin", "-v", "error", "-y", "-i", clip, "-filter_complex", fc, "-map", "[v]",
+                        "-t", "4", "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", out])
+    os.remove(clip)
     if r.returncode != 0:
         return 1
     subprocess.Popen(["xdg-open", out], start_new_session=True)

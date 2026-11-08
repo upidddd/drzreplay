@@ -437,13 +437,14 @@ class Daemon:
             from . import save as S
             # the first chunk began before the key was pressed: start at the keyframe nearest the press
             first_len = S.probe(parts[0])[0]
-            inpoint = rec["t0"] - (rec.get("first_end", rec["t0"]) - first_len)
+            offset = rec["t0"] - (rec.get("first_end", rec["t0"]) - first_len)
+            key = S.keyframe_before(parts[0], offset)[0] if 0.2 < offset < first_len else None
             listfile = os.path.join(rec["dir"], "list.txt")
             with open(listfile, "w") as f:
                 for i, p in enumerate(parts):
                     f.write(f"file '{p}'\n")
-                    if i == 0 and 0.2 < inpoint < first_len:
-                        f.write(f"inpoint {inpoint:.3f}\n")
+                    if i == 0 and key is not None:
+                        f.write(f"inpoint {key:.3f}\n")
             ext = "mkv" if self.cfg["container"] == "mkv" else "mp4"
             out = os.path.join(C.output_dir(self.cfg), f"{rec['name']}.{ext}")
             tmp = os.path.join(rec["dir"], f"out.{ext}")

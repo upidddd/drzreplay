@@ -1,4 +1,4 @@
-"""Turn the ring buffer into a finished clip (with the gate intro on top)."""
+"""Turn the ring buffer into a finished clip (with the intro on top when it is on)."""
 import fcntl
 import glob
 import json
@@ -11,6 +11,7 @@ from datetime import datetime
 
 from ..core import config as C
 from ..core import system
+from . import intro
 
 
 def notify(cfg, body, icon=None, urgency="normal", replace=None, actions=None, wait=False):
@@ -44,9 +45,22 @@ def probe(path):
         return 0.0, set(), (None, None)
 
 
-def intro_ready():
-    return all(os.path.exists(os.path.join(C.INTRO_DIR, f))
-               for f in ("gate_color.mp4", "gate_alpha.mkv", "intro_sfx.wav", "intro.json"))
+def keyframe_before(path, offset):
+    """For a concat `inpoint`: the keyframe at or before `offset` seconds into the file, in the file's own
+    timestamps (mpegts chunks don't start at 0), and how many seconds before `offset` it is."""
+    r = system.run(["ffprobe", "-v", "error", "-select_streams", "v", "-skip_frame", "nokey",
+                    "-show_entries", "frame=pts_time", "-of", "csv=p=0", path])
+    keys = []
+    for line in (r.stdout.split() if r else []):
+        try:
+            keys.append(float(line.strip(",")))
+        except ValueError:
+            pass
+    if not keys:
+        return None, 0.0
+    target = keys[0] + offset
+    key = max((k for k in keys if k <= target + 0.02), default=keys[0])
+    return key, max(0.0, target - key)
 
 
 def cleanup(cfg, keep):
@@ -82,15 +96,18 @@ def show_in_folder(path):
         subprocess.Popen(["xdg-open", os.path.dirname(path)], start_new_session=True)
 
 
-def build_cmd(cfg, enc, hwdec, info, listfile, start, length, has_audio, native, out_path):
+def export_size(cfg, native):
     nw, nh = native
     eh = int(cfg["export_height"] or 0)
     if eh and eh < nh:
-        w, h = int(round(nw * eh / nh / 2)) * 2, eh
-    else:
-        w, h = nw, nh
+        return int(round(nw * eh / nh / 2)) * 2, eh
+    return nw, nh
+
+
+def build_cmd(cfg, enc, hwdec, info, listfile, start, length, has_audio, native, out_path, overlay=None):
+    """Re-encode: exact cut, resize, intro. `overlay` is (clip, x, y) of the rendered intro or None."""
+    w, h = export_size(cfg, native)
     fps = int(cfg["fps"])
-    use_intro = cfg["intro"] and intro_ready()
 
     cmd = ["nice", "-n", "15", "ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error", "-y"]
     if shutil.which("ionice"):
@@ -105,42 +122,25 @@ def build_cmd(cfg, enc, hwdec, info, listfile, start, length, has_audio, native,
     acut = f"atrim=start={start:.3f}:duration={length:.3f},asetpts=PTS-STARTPTS"
 
     fc = []
-    total = length
-    if use_intro:
-        meta = json.load(open(os.path.join(C.INTRO_DIR, "intro.json")))
-        r = float(meta["replay_start"])
-        total = length + r
-        cover = f"scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h}"
-        cmd += ["-i", os.path.join(C.INTRO_DIR, "gate_color.mp4"), "-i", os.path.join(C.INTRO_DIR, "gate_alpha.mkv"),
-                "-i", os.path.join(C.INTRO_DIR, "intro_sfx.wav")]
-        fc.append(f"[0:v]{vcut},fps={fps},scale={w}:{h},format=yuv420p,"
-                  f"tpad=start_mode=clone:start_duration={r}[bg]")
-        fc.append(f"[1:v]{cover},format=yuv444p[gc]")
-        fc.append(f"[2:v]{cover},format=gray[ga]")
-        fc.append("[gc][ga]alphamerge[gate]")
-        vout = "[bg][gate]overlay=eof_action=pass,format=yuv420p"
-        iv = int(cfg["intro_volume"]) / 100
-        if has_audio:
-            fc.append(f"[0:a]{acut},aresample=48000,adelay={int(r * 1000)}:all=1[ra]")
-            fc.append(f"[3:a]aresample=48000,volume={iv:.2f}[ia]")
-            fc.append("[ra][ia]amix=inputs=2:duration=first:normalize=0,alimiter=limit=0.97[a]")
-        else:
-            fc.append(f"[3:a]aresample=48000,volume={iv:.2f},apad[a]")
-        audio = True
-    else:
-        vout = f"[0:v]{vcut},fps={fps},scale={w}:{h},format=yuv420p"
-        if has_audio:
-            fc.append(f"[0:a]{acut},aresample=48000[a]")
-        audio = has_audio
+    vout = f"[0:v]{vcut},fps={fps},scale={w}:{h},format=yuv420p"
+    if overlay:
+        clip, x, y = overlay
+        cmd += ["-i", clip]
+        fc.append(f"{vout}[bg]")
+        # shifted to its start; before that the overlay has no frame and the replay shows as is
+        fc.append(f"[1:v]setpts=PTS-STARTPTS+{intro.START}/TB[ov]")
+        vout = f"[bg][ov]overlay={x}:{y}:eof_action=pass,format=yuv420p"
+    if has_audio:
+        fc.append(f"[0:a]{acut},aresample=48000[a]")
     if enc == "vaapi":
         vout += ",format=nv12,hwupload"
     fc.append(vout + "[v]")
 
     q = C.EXPORT_QUALITY.get(cfg["export_quality"], 19)
     cmd += ["-filter_complex", ";".join(fc), "-map", "[v]"]
-    if audio:
+    if has_audio:
         cmd += ["-map", "[a]", "-c:a", "aac", "-b:a", "192k"]
-    cmd += ["-t", f"{total:.3f}"]
+    cmd += ["-t", f"{length:.3f}"]
     if enc == "nvenc":
         cmd += ["-c:v", "h264_nvenc", "-preset", "p5", "-rc", "vbr", "-cq", str(q), "-b:v", "0",
                 "-maxrate", "60M", "-bufsize", "60M", "-profile:v", "high", "-pix_fmt", "yuv420p"]
@@ -152,6 +152,17 @@ def build_cmd(cfg, enc, hwdec, info, listfile, start, length, has_audio, native,
         cmd += ["-movflags", "+faststart"]
     cmd.append(out_path)
     return cmd
+
+
+def copy_cmd(listfile, length, out_path):
+    """No re-encode: the recording is copied as is, starting at the keyframe (one a second) before the cut.
+    Instant and with no load on the graphics card while a game runs."""
+    cmd = ["ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error", "-y",
+           "-f", "concat", "-safe", "0", "-i", listfile, "-map", "0:v", "-map", "0:a?", "-c", "copy",
+           "-t", f"{length:.3f}"]
+    if out_path.endswith(".mp4"):
+        cmd += ["-movflags", "+faststart"]
+    return cmd + [out_path]
 
 
 MIN_SINCE_LAST = 1.0     # a quick second press still gets a moment, not an empty clip
@@ -218,7 +229,7 @@ def main(args):
         if native and size != native:      # resolution changed mid-buffer: stop here
             break
         native = size
-        picked.append(dst)
+        picked.append((dst, d))
         kinds |= k
         total += d
         if total >= want + 0.5:
@@ -229,8 +240,24 @@ def main(args):
         return 1
     listfile = os.path.join(snap, "list.txt")
     with open(listfile, "w") as f:
-        f.writelines(f"file '{p}'\n" for p in picked)
+        f.writelines(f"file '{p}'\n" for p, _ in picked)
     start, length = max(0.0, total - want), min(want, total)
+    # the same cut for a plain copy: skip whole chunks before it, start inside the first one
+    # it starts on the keyframe before the cut, so it's up to a second longer
+    copylist, copy_len = os.path.join(snap, "copy.txt"), length
+    with open(copylist, "w") as f:
+        skip = start
+        for p, d in picked:
+            if skip >= d:
+                skip -= d
+                continue
+            f.write(f"file '{p}'\n")
+            if skip > 0.05:
+                key, extra = keyframe_before(p, skip)
+                if key is not None:
+                    f.write(f"inpoint {key:.3f}\n")
+                    copy_len += extra
+            skip = 0
     # the buffer counts as empty from the press on (the window's buffer bar drops to 0 right away);
     # put the old mark back if this save fails
     prev_mark = C.read_json(C.LAST_SAVE, None)
@@ -245,16 +272,27 @@ def main(args):
     out = os.path.join(outdir, name)
     tmp = os.path.join(outdir, f".{name}.part.{ext}")
 
+    number, overlay = intro.next_number(cfg), None      # every replay counts, intro or not
+    if cfg["intro"] and intro.available():
+        try:
+            clip = os.path.join(snap, "intro.mov")
+            intro.render(clip, number, datetime.fromtimestamp(pressed), export_size(cfg, native)[1], int(cfg["fps"]))
+            overlay = (clip, *intro.position(export_size(cfg, native)[1]))
+        except Exception as e:             # a broken intro must not cost the replay
+            print(f"intro: {e}", file=sys.stderr)
+
     info = system.detect_encoders()
-    order = system.encoder_order(cfg, info)
     attempts = []
-    for e in order:
+    if not overlay and export_size(cfg, native) == native:
+        attempts.append(copy_cmd(copylist, copy_len, tmp))
+    for e in system.encoder_order(cfg, info):
         if e == "nvenc":
-            attempts.append((e, True))
-        attempts.append((e, False))
+            attempts.append(build_cmd(cfg, e, True, info, listfile, start, length, "audio" in kinds, native, tmp,
+                                      overlay))
+        attempts.append(build_cmd(cfg, e, False, info, listfile, start, length, "audio" in kinds, native, tmp,
+                                  overlay))
     err = "unknown error"
-    for enc, hw in attempts:
-        cmd = build_cmd(cfg, enc, hw, info, listfile, start, length, "audio" in kinds, native, tmp)
+    for cmd in attempts:
         r = subprocess.run(cmd, capture_output=True, text=True)
         if r.returncode == 0 and os.path.exists(tmp) and os.path.getsize(tmp) > 1000:
             break
@@ -273,6 +311,7 @@ def main(args):
         notify(cfg, f"Save failed: {err}", "dialog-error", "critical", nid)
         return 1
     os.replace(tmp, out)
+    intro.commit(number)
     shutil.rmtree(snap, ignore_errors=True)
     cleanup(cfg, out)
     fcntl.flock(lock, fcntl.LOCK_UN)

@@ -35,6 +35,11 @@ When you want to keep the moment, one key saves it.
   grab the keyboard. Press it twice and you get two clips — nothing is lost.
 - **No repeats.** A replay empties the buffer: if 15 seconds passed since the last replay, the next one
   saves just those 15 s, not the whole minute again (can be turned off in Settings).
+- **Instant saves.** The clip is copied straight from memory, without encoding it again, so it's
+  ready in about a second and the game doesn't notice. (Shrinking it to 720p or the intro re-encode it
+  on the graphics card.)
+- **Intro.** Optionally, *REPLAY #12* and the date slide out in the top-left corner for the first
+  couple of seconds of every replay. No sound, nothing added before the moment itself.
 - **Full recordings too.** Alt+R starts recording a whole video, Alt+R again stops it. It uses the same
   encoder, so it costs nothing extra, and the file is ready a second after you stop.
 - **Sound.** System sound and your microphone, each with its own device and volume. Works with
@@ -175,14 +180,13 @@ src/drzreplay/
 ├── core/              settings, paths, machine probing, autostart, update check
 ├── recorder/          background recorder, Wayland capture, hotkey, saving and trimming clips
 ├── ui/                window (Record / Clips / Settings) and tray icon
-└── assets/            icons, sounds, intro video
+└── assets/            icon, click sound, fonts of the intro
 packaging/
 ├── debian/            control file and maintainer scripts of the .deb
 ├── files/             launcher, .desktop entries
 ├── build-deb.sh       build the package
 ├── release.sh         build and publish a GitHub release
 └── install.sh         the one-line installer
-tools/intro/           renderer of the intro animation (fonts, sounds)
 docs/                  screenshots for this page
 ```
 
@@ -194,12 +198,11 @@ packaging/release.sh       # build + publish a GitHub release (needs gh)
 ```
 
 Run from source without installing: `PYTHONPATH=src python3 -m drzreplay`.
-It needs `python3-gi gir1.2-gtk-4.0 gir1.2-adw-1 ffmpeg x11-xserver-utils pulseaudio-utils`.
+It needs `python3-gi gir1.2-gtk-4.0 gir1.2-adw-1 python3-pil ffmpeg x11-xserver-utils pulseaudio-utils`.
 
 ## Credits
 
-Sounds from OpenGameArt.org: "Sci-Fi Pack Vol 1" by JC Sounds (CC BY 4.0),
-"Mechanical Sounds" by Brian MacIntosh (CC0) and "Iron Door" (CC0).
-Font: Oswald (SIL OFL). Details in [`src/drzreplay/assets/CREDITS.txt`](src/drzreplay/assets/CREDITS.txt).
+Click sound from "Mechanical Sounds" by Brian MacIntosh (CC0, OpenGameArt.org).
+Fonts: Oswald and Inter (SIL OFL). Details in [`src/drzreplay/assets/CREDITS.txt`](src/drzreplay/assets/CREDITS.txt).
 
 Code: [MIT](LICENSE).

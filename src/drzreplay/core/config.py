@@ -14,7 +14,6 @@ INSTALL_CMD = f"curl -fsSL https://github.com/{REPO}/releases/latest/download/in
 # the directory that holds the drzreplay package (goes on PYTHONPATH for child processes)
 PKG_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
 ASSETS = os.path.join(PKG_DIR, "drzreplay", "assets")
-INTRO_DIR = os.path.join(ASSETS, "intro")
 ICON_PATH = os.path.join(ASSETS, "icons", "drzreplay.svg")
 CLICK_SOUND = os.path.join(ASSETS, "sounds", "click.wav")
 
@@ -79,8 +78,7 @@ DEFAULTS = {
     "notifications": True,
     "tray": True,
     # intro
-    "intro": False,
-    "intro_volume": 100,
+    "intro": False,                 # replay number and date in the corner for the first seconds
     "replay_since_last": True,  # a replay doesn't repeat what the previous one already saved
     "record_hotkey": "<Alt>r",  # start / stop recording a full video
 }

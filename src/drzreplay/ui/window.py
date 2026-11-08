@@ -130,6 +130,7 @@ class Window(Adw.ApplicationWindow):
         self.enc_info = system.detect_encoders()
         self.thumbs = ThumbLoader()
         self._clips_sig = None
+        self._dir_sig = None
         self._clip_rows = {}        # (path, mtime, size) -> row, reused between refreshes
         self._last_refresh = 0.0
         self.latest = None
@@ -141,6 +142,7 @@ class Window(Adw.ApplicationWindow):
 
         self.stack = Adw.ViewStack()
         header = Adw.HeaderBar()
+        header.pack_start(Gtk.Image(icon_name="drzreplay", pixel_size=16, margin_start=6, tooltip_text=C.APP_NAME))
         header.set_title_widget(Adw.ViewSwitcher(stack=self.stack, policy=Adw.ViewSwitcherPolicy.WIDE))
         menu = Gio.Menu()
         menu.append("Recorder log", "app.open-log")
@@ -297,6 +299,7 @@ class Window(Adw.ApplicationWindow):
         g.add(self.rec_row)
 
         self.buf_row = Adw.ActionRow(title="Buffer")
+        self.buf_row.add_prefix(Gtk.Image(icon_name="document-open-recent-symbolic"))
         self.buf_bar = Gtk.ProgressBar(valign=Gtk.Align.CENTER)
         self.buf_bar.set_size_request(160, -1)
         self.buf_row.add_suffix(self.buf_bar)
@@ -396,6 +399,15 @@ class Window(Adw.ApplicationWindow):
         self.load_clips()
 
     def load_clips(self, force=False):
+        # polled every second: a stat of the folder is enough to know nothing was added or removed
+        d = C.output_dir(self.cfg)
+        try:
+            dir_sig = (d, os.stat(d).st_mtime_ns)
+        except OSError:
+            dir_sig = (d, None)
+        if dir_sig == self._dir_sig and not force:
+            return
+        self._dir_sig = dir_sig
         clips = self.clip_files()
         shown = clips[:MAX_CLIPS_SHOWN]
         sig = (C.output_dir(self.cfg), tuple((p, m, s) for m, s, p in shown), len(clips))
@@ -565,7 +577,10 @@ class Window(Adw.ApplicationWindow):
         g.add(prefix)
         g.add(self.combo("Format", "container", FORMAT))
         g.add(self.combo("Resolution", "export_height", RESOLUTION))
-        g.add(self.combo("Quality", "export_quality", QUALITY, "Of the saved file"))
+        g.add(self.combo("Quality", "export_quality", QUALITY, "When the clip is resized or has the intro"))
+        intro = self.switch("Intro", "intro", "Replay number and date in the corner for the first seconds")
+        intro.add_suffix(self.button(icon="media-playback-start-symbolic", tip="Preview", cb=self.preview_intro))
+        g.add(intro)
         page.add(g)
 
         g = Adw.PreferencesGroup(title="Cleanup", description="Oldest clips are deleted when a limit is reached")
@@ -583,14 +598,6 @@ class Window(Adw.ApplicationWindow):
                           "The next replay only has what happened after the last one"))
         g.add(self.switch("Click sound", "click_sound", "When a replay is saved or a recording starts and stops"))
         g.add(self.switch("Notifications", "notifications"))
-        page.add(g)
-
-        g = Adw.PreferencesGroup(title="Intro", description="Animated metal gate before each replay")
-        intro = self.switch("Intro before replay", "intro")
-        intro.add_suffix(self.button(icon="media-playback-start-symbolic", tip="Preview", cb=self.preview_intro))
-        g.add(intro)
-        self.intro_vol = self.scale("Intro volume", "intro_volume", 0, 200)
-        g.add(self.intro_vol)
         page.add(g)
 
         g = Adw.PreferencesGroup(title="Startup")
@@ -614,8 +621,6 @@ class Window(Adw.ApplicationWindow):
                 w.set_sensitive(self.cfg["system_audio"])
             for w in (self.mic_row, self.mic_vol):
                 w.set_sensitive(self.cfg["mic"])
-        if hasattr(self, "intro_vol"):
-            self.intro_vol.set_sensitive(self.cfg["intro"])
         if hasattr(self, "save_hint"):
             self.save_hint.set_label(f"or press {pretty(self.cfg['hotkey'])}")
             rk = self.cfg["record_hotkey"]
@@ -912,11 +917,8 @@ class App(Adw.Application):
                                 developer_name="DRZ", license_type=Gtk.License.MIT_X11,
                                 website=f"https://github.com/{C.REPO}",
                                 issue_url=f"https://github.com/{C.REPO}/issues")
-        about.add_legal_section("Sounds", None, Gtk.License.CUSTOM,
-                                "Sci-Fi Pack Vol 1 by JC Sounds, CC BY 4.0\n"
-                                "https://opengameart.org/content/jc-sounds-sci-fi-pack-vol-1\n"
-                                "Mechanical Sounds by Brian MacIntosh, CC0\nIron Door, CC0")
-        about.add_legal_section("Font", None, Gtk.License.CUSTOM, "Oswald, SIL Open Font License 1.1")
+        about.add_legal_section("Sound", None, Gtk.License.CUSTOM, "Mechanical Sounds by Brian MacIntosh, CC0")
+        about.add_legal_section("Fonts", None, Gtk.License.CUSTOM, "Oswald and Inter, SIL Open Font License 1.1")
         about.present(self.win)
 
 
