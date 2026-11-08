@@ -154,7 +154,7 @@ def build_cmd(cfg, enc, hwdec, info, listfile, start, length, has_audio, native,
     return cmd
 
 
-MIN_SINCE_LAST = 3.0     # a quick second press still gets a few seconds, not an empty clip
+MIN_SINCE_LAST = 1.0     # a quick second press still gets a moment, not an empty clip
 
 
 def since_last_save(cfg, pressed):
@@ -231,6 +231,10 @@ def main(args):
     with open(listfile, "w") as f:
         f.writelines(f"file '{p}'\n" for p in picked)
     start, length = max(0.0, total - want), min(want, total)
+    # the buffer counts as empty from the press on (the window's buffer bar drops to 0 right away);
+    # put the old mark back if this save fails
+    prev_mark = C.read_json(C.LAST_SAVE, None)
+    C.write_json(C.LAST_SAVE, {"end": pressed, "session": (C.read_json(C.STATUSFILE, {}) or {}).get("started")})
     nid = notify(cfg, "Saving…")
     nid = nid[0] if nid else None
 
@@ -259,11 +263,17 @@ def main(args):
         shutil.rmtree(snap, ignore_errors=True)
         if os.path.exists(tmp):
             os.remove(tmp)
+        if prev_mark is None:
+            try:
+                os.remove(C.LAST_SAVE)
+            except OSError:
+                pass
+        else:
+            C.write_json(C.LAST_SAVE, prev_mark)
         notify(cfg, f"Save failed: {err}", "dialog-error", "critical", nid)
         return 1
     os.replace(tmp, out)
     shutil.rmtree(snap, ignore_errors=True)
-    C.write_json(C.LAST_SAVE, {"end": pressed, "session": (C.read_json(C.STATUSFILE, {}) or {}).get("started")})
     cleanup(cfg, out)
     fcntl.flock(lock, fcntl.LOCK_UN)
     print(out)

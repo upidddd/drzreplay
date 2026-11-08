@@ -710,7 +710,11 @@ class Daemon:
         segs = glob.glob(os.path.join(C.RUNTIME, "seg_*.ts"))
         buffered = 0.0
         if self.state == "recording" and self.started:
-            buffered = min(float(self.cfg["seconds"]), time.time() - self.started)
+            since = self.started
+            last = C.read_json(C.LAST_SAVE, {}) or {}
+            if self.cfg["replay_since_last"] and last.get("session") == self.started:
+                since = max(since, float(last.get("end", 0)))      # a replay empties the buffer
+            buffered = max(0.0, min(float(self.cfg["seconds"]), time.time() - since))
         accel, ok, err = self.hk_state
         C.write_json(C.STATUSFILE, {
             "pid": os.getpid(), "state": self.state, "error": self.error, "encoder": self.enc,

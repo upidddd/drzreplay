@@ -579,8 +579,8 @@ class Window(Adw.ApplicationWindow):
         self.rk_row, self.rk_label = self.hotkey_row("Recording hotkey", "record_hotkey",
                                                      "Starts and stops recording a full video")
         g.add(self.rk_row)
-        g.add(self.switch("Replays don't repeat", "replay_since_last",
-                          "The next replay starts where the last one ended"))
+        g.add(self.switch("Clear the buffer after a replay", "replay_since_last",
+                          "The next replay only has what happened after the last one"))
         g.add(self.switch("Click sound", "click_sound", "When a replay is saved or a recording starts and stops"))
         g.add(self.switch("Notifications", "notifications"))
         page.add(g)

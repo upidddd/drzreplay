@@ -33,8 +33,8 @@ When you want to keep the moment, one key saves it.
   The last minute lives in RAM (10–100 MB), the disk is only touched when you save.
 - **One key.** Alt+Z (or any key you pick) works everywhere, including fullscreen games that
   grab the keyboard. Press it twice and you get two clips — nothing is lost.
-- **No repeats.** If 15 seconds passed since the last replay, the next one saves just those 15 s,
-  not the whole buffer again (can be turned off in Settings).
+- **No repeats.** A replay empties the buffer: if 15 seconds passed since the last replay, the next one
+  saves just those 15 s, not the whole minute again (can be turned off in Settings).
 - **Full recordings too.** Alt+R starts recording a whole video, Alt+R again stops it. It uses the same
   encoder, so it costs nothing extra, and the file is ready a second after you stop.
 - **Sound.** System sound and your microphone, each with its own device and volume. Works with
