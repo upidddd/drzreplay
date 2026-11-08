@@ -168,12 +168,13 @@ def portal_trigger(accel):
 
 
 class Shortcuts(_Portal):
-    """Global hotkey through the desktop (GNOME 48+, KDE Plasma 6): on_press() when it's pressed."""
+    """Global hotkeys through the desktop (GNOME 48+, KDE Plasma 6): on_press(name) when one is pressed."""
     iface = "org.freedesktop.portal.GlobalShortcuts"
+    DESCRIPTIONS = {"save": "Save a replay", "record": "Start / stop recording"}
 
-    def __init__(self, accel, on_press, on_state):
+    def __init__(self, keys, on_press, on_state):
         super().__init__()
-        self.accel, self.on_press, self.on_state = accel, on_press, on_state
+        self.keys, self.on_press, self.on_state = keys, on_press, on_state     # {name: accel}
 
     def start(self):
         if not self.available():
@@ -184,19 +185,20 @@ class Shortcuts(_Portal):
         self.create_session(self._bind, lambda e: self.on_state(False, e))
 
     def _bind(self):
-        shortcut = ("save", {"description": _s("Save a replay"), "preferred_trigger": _s(portal_trigger(self.accel))})
-        self.request("BindShortcuts", [("o", self.session), ("a(sa{sv})", [shortcut]), ("s", "")], {},
+        shortcuts = [(name, {"description": _s(self.DESCRIPTIONS.get(name, name)),
+                             "preferred_trigger": _s(portal_trigger(accel))}) for name, accel in self.keys.items()]
+        self.request("BindShortcuts", [("o", self.session), ("a(sa{sv})", shortcuts), ("s", "")], {},
                      lambda _r: self.on_state(True, ""), lambda e: self.on_state(False, e))
 
     def _activated(self, _conn, _sender, _path, _iface, _signal, params):
         session, shortcut = params.unpack()[:2]
-        if session == self.session and shortcut == "save":
-            self.on_press()
+        if session == self.session and shortcut in self.keys:
+            self.on_press(shortcut)
 
 
 # ---------------------------------------------------------------------- GStreamer
 def _gst_encoder(enc, fps, q):
-    k = fps * C.SEGMENT
+    k = fps                              # a keyframe every second, like on X11
     if enc == "nvenc":
         return f"videoconvert n-threads=2 ! video/x-raw,format=NV12 ! nvh264enc gop-size={k} bframes=0 rc-mode=vbr " \
                f"const-quality={q} ! video/x-h264,profile=high"

@@ -33,8 +33,10 @@ When you want to keep the moment, one key saves it.
   The last minute lives in RAM (10–100 MB), the disk is only touched when you save.
 - **One key.** Alt+Z (or any key you pick) works everywhere, including fullscreen games that
   grab the keyboard. Press it twice and you get two clips — nothing is lost.
-- **Any length.** Save just the last N seconds — pick N under *Save replay → Save last…*;
-  the tray remembers it as *Save last N s*.
+- **No repeats.** If 15 seconds passed since the last replay, the next one saves just those 15 s,
+  not the whole buffer again (can be turned off in Settings).
+- **Full recordings too.** Alt+R starts recording a whole video, Alt+R again stops it. It uses the same
+  encoder, so it costs nothing extra, and the file is ready a second after you stop.
 - **Sound.** System sound and your microphone, each with its own device and volume. Works with
   PulseAudio and PipeWire; plug in headphones and recording follows them without a restart.
 - **Clips tab.** Thumbnails, length and size of every clip. Click to play, **drag a clip
@@ -77,7 +79,8 @@ starts recording right away; from then on it starts with your computer.
 | | |
 |---|---|
 | **Alt+Z** | save the last minute (length is set on the Record tab) |
-| **Tray icon** | right click: save, save last N s, pause, folder, settings |
+| **Alt+R** | start / stop recording a full video |
+| **Tray icon** | right click: save, start / stop recording, pause, folder, settings |
 | **Middle click on the tray icon** | save |
 | **Menu → DrzReplay** | the window with the Record, Clips and Settings tabs |
 
@@ -158,7 +161,8 @@ lower the frame rate to 30 and the quality to *Low* or *Medium*.
 
 ```
 drzreplay                      open the window
-drzreplay save [--seconds N]   save a replay now (optionally only the last N seconds)
+drzreplay save                 save a replay now
+drzreplay record [start|stop]  start / stop recording a full video
 drzreplay start|stop|restart   control the background recorder
 drzreplay status               what the recorder is doing
 ```

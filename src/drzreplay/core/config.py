@@ -7,7 +7,7 @@ import sys
 
 APP_NAME = "DrzReplay"
 APP_ID = "com.drz.DrzReplay"
-VERSION = "1.4.1"
+VERSION = "1.5.0"
 REPO = "upidddd/drzreplay"
 INSTALL_CMD = f"curl -fsSL https://github.com/{REPO}/releases/latest/download/install.sh | sh"
 
@@ -28,6 +28,8 @@ STATUSFILE = os.path.join(RUNTIME, "status.json")
 ENCODERS_CACHE = os.path.join(RUNTIME, "encoders.json")
 FFMPEG_LOG = os.path.join(RUNTIME, "ffmpeg.log")
 HOTKEY_LOG = os.path.join(RUNTIME, "hotkey.log")
+LAST_SAVE = os.path.join(RUNTIME, "last_save.json")    # {"end": time, "session": recorder start time}
+REQUEST = os.path.join(RUNTIME, "request")              # a command for the daemon, read on SIGHUP
 
 SEGMENT = 5  # seconds per ring-buffer chunk
 
@@ -79,7 +81,8 @@ DEFAULTS = {
     # intro
     "intro": False,
     "intro_volume": 100,
-    "custom_seconds": 20,    # "Save last N s" in the tray / Save menu
+    "replay_since_last": True,  # a replay doesn't repeat what the previous one already saved
+    "record_hotkey": "<Alt>r",  # start / stop recording a full video
 }
 
 # changing any of these needs the recorder (ffmpeg) to restart

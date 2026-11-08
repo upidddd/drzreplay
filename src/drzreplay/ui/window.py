@@ -35,8 +35,8 @@ CSS = b"""
 .thumb { border-radius: 6px; background: alpha(currentColor, 0.08); }
 .rec-on { color: #e01b24; }
 .save-hint { margin-top: 6px; }
-splitbutton.save > button { min-height: 40px; padding: 0 26px; font-weight: bold; }
-splitbutton.save > menubutton > button { min-height: 40px; }
+button.rec-btn { padding: 0 22px; min-height: 36px; }
+button.save { min-height: 40px; padding: 0 34px; font-weight: bold; }
 """
 
 
@@ -159,11 +159,6 @@ class Window(Adw.ApplicationWindow):
         self.toasts = Adw.ToastOverlay(child=self.stack)
         tv.set_content(self.toasts)
         self.set_content(tv)
-
-        for name, cb in (("save", lambda *_: self.on_save()), ("save-custom", lambda *_: self.ask_seconds())):
-            a = Gio.SimpleAction.new(name, None)
-            a.connect("activate", cb)
-            self.add_action(a)
 
         self.update_sensitivity()
         self.poll()
@@ -310,15 +305,19 @@ class Window(Adw.ApplicationWindow):
 
         g = Adw.PreferencesGroup()
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, halign=Gtk.Align.CENTER, margin_top=6)
-        menu = Gio.Menu()
-        menu.append("Save last…", "win.save-custom")
-        self.save_btn = Adw.SplitButton(label="Save replay", menu_model=menu, action_name="win.save",
-                                        dropdown_tooltip="Save only the last few seconds")
-        self.save_btn.add_css_class("suggested-action")
-        self.save_btn.add_css_class("save")
+        self.save_btn = Gtk.Button(label="Save replay", css_classes=["suggested-action", "pill", "save"])
+        self.save_btn.connect("clicked", lambda *_: self.on_save())
         box.append(self.save_btn)
         self.save_hint = Gtk.Label(css_classes=["dim-label", "save-hint"])
         box.append(self.save_hint)
+        # a full video from now until stopped (same encoder, no extra load)
+        self.rec_btn = Gtk.Button(css_classes=["pill", "rec-btn"], halign=Gtk.Align.CENTER, margin_top=18)
+        self.rec_btn_content = Adw.ButtonContent(icon_name="media-record-symbolic", label="Start recording")
+        self.rec_btn.set_child(self.rec_btn_content)
+        self.rec_btn.connect("clicked", lambda *_: self.daemon_cmd("record"))
+        box.append(self.rec_btn)
+        self.rec_hint = Gtk.Label(css_classes=["dim-label", "save-hint"])
+        box.append(self.rec_hint)
         g.add(box)
         page.add(g)
 
@@ -575,13 +574,14 @@ class Window(Adw.ApplicationWindow):
         page.add(g)
 
         g = Adw.PreferencesGroup(title="Controls")
-        self.hk_row = Adw.ActionRow(title="Hotkey")
-        self.hk_label = Gtk.Label(label=pretty(self.cfg["hotkey"]), valign=Gtk.Align.CENTER)
-        self.hk_label.add_css_class("dim-label")
-        self.hk_row.add_suffix(self.hk_label)
-        self.hk_row.add_suffix(self.button("Change", cb=self.change_hotkey))
+        self.hk_row, self.hk_label = self.hotkey_row("Replay hotkey", "hotkey")
         g.add(self.hk_row)
-        g.add(self.switch("Click sound", "click_sound", "When a replay is being saved"))
+        self.rk_row, self.rk_label = self.hotkey_row("Recording hotkey", "record_hotkey",
+                                                     "Starts and stops recording a full video")
+        g.add(self.rk_row)
+        g.add(self.switch("Replays don't repeat", "replay_since_last",
+                          "The next replay starts where the last one ended"))
+        g.add(self.switch("Click sound", "click_sound", "When a replay is saved or a recording starts and stops"))
         g.add(self.switch("Notifications", "notifications"))
         page.add(g)
 
@@ -618,6 +618,9 @@ class Window(Adw.ApplicationWindow):
             self.intro_vol.set_sensitive(self.cfg["intro"])
         if hasattr(self, "save_hint"):
             self.save_hint.set_label(f"or press {pretty(self.cfg['hotkey'])}")
+            rk = self.cfg["record_hotkey"]
+            self.rec_hint.set_label(f"or press {pretty(rk)}" if rk else "")
+            self.rec_hint.set_visible(bool(rk))
 
     # ------------------------------------------------------------------ status
     def poll(self):
@@ -657,11 +660,26 @@ class Window(Adw.ApplicationWindow):
                                   if recording else "Empty")
         self.save_btn.set_sensitive(recording and buffered >= 1)
 
-        if pid and st.get("hotkey") == self.cfg["hotkey"]:
-            if st.get("hotkey_ok"):
-                self.hk_row.set_subtitle("")
-            elif st.get("hotkey_error") not in (None, "", "starting"):
-                self.hk_row.set_subtitle(f"Not working: {st['hotkey_error']}")
+        for prefix, key, row, sub in (("hotkey", "hotkey", self.hk_row, ""),
+                                      ("record_hotkey", "record_hotkey", self.rk_row,
+                                       "Starts and stops recording a full video")):
+            if pid and st.get(prefix) == self.cfg[key]:
+                if st.get(f"{prefix}_ok"):
+                    row.set_subtitle(sub)
+                elif st.get(f"{prefix}_error") not in (None, "", "starting", "no hotkey"):
+                    row.set_subtitle(f"Not working: {st[prefix + '_error']}")
+
+        since = st.get("file_recording") if pid else None
+        if since:
+            mins, secs = divmod(int(time.time() - since), 60)
+            self.rec_btn_content.set_label(f"Stop recording · {mins}:{secs:02d}")
+            self.rec_btn_content.set_icon_name("media-playback-stop-symbolic")
+            self.rec_btn.add_css_class("destructive-action")
+        else:
+            self.rec_btn_content.set_label("Start recording")
+            self.rec_btn_content.set_icon_name("media-record-symbolic")
+            self.rec_btn.remove_css_class("destructive-action")
+        self.rec_btn.set_sensitive(bool(since) or recording)
         self.load_clips()
         return True
 
@@ -691,35 +709,13 @@ class Window(Adw.ApplicationWindow):
         subprocess.Popen(C.launcher() + [cmd], start_new_session=True,
                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
-    def ask_seconds(self):
-        """Save only the last N seconds; N is remembered for the tray menu too."""
-        top = int(self.cfg["seconds"])
-        dlg = Adw.AlertDialog(heading="Save the last…")
-        adj = Gtk.Adjustment(value=min(int(self.cfg["custom_seconds"]), top), lower=1, upper=top,
-                             step_increment=1, page_increment=10)
-        row = Adw.SpinRow(title="Seconds", subtitle=f"Up to {top}", adjustment=adj)
-        lst = Gtk.ListBox(css_classes=["boxed-list"], selection_mode=Gtk.SelectionMode.NONE)
-        lst.append(row)
-        dlg.set_extra_child(lst)
-        dlg.add_response("cancel", "Cancel")
-        dlg.add_response("save", "Save")
-        dlg.set_response_appearance("save", Adw.ResponseAppearance.SUGGESTED)
-        dlg.set_default_response("save")
-
-        def done(_d, resp):
-            if resp == "save":
-                sec = int(row.get_value())
-                self.set("custom_seconds", sec)
-                self.on_save(sec)
-
-        dlg.connect("response", done)
-        dlg.present(self)
-
-    def on_save(self, seconds=None):
-        extra = ["--seconds", str(seconds)] if seconds else []
-        subprocess.Popen(C.launcher() + ["save"] + extra, start_new_session=True,
+    def daemon_cmd(self, *cmd):
+        subprocess.Popen(C.launcher() + list(cmd), start_new_session=True,
                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        self.toast("Saving…" if not seconds else f"Saving the last {seconds} s…")
+
+    def on_save(self):
+        self.daemon_cmd("save")
+        self.toast("Saving…")
 
     def open_dir(self):
         d = C.output_dir(self.cfg)
@@ -742,7 +738,16 @@ class Window(Adw.ApplicationWindow):
 
         dlg.select_folder(self, None, done)
 
-    def change_hotkey(self, *_):
+    def hotkey_row(self, title, key, subtitle=None):
+        row = Adw.ActionRow(title=title, subtitle=subtitle)
+        label = Gtk.Label(label=pretty(self.cfg[key]) if self.cfg[key] else "None", valign=Gtk.Align.CENTER)
+        label.add_css_class("dim-label")
+        row.add_suffix(label)
+        row.add_suffix(self.button("Change", cb=lambda *_: self.change_hotkey(key, label, row, subtitle)))
+        return row, label
+
+    def change_hotkey(self, key="hotkey", label=None, row=None, subtitle=None):
+        label, row = label or self.hk_label, row or self.hk_row
         dlg = Adw.AlertDialog(heading="Press a new hotkey", body="Esc to cancel")
         dlg.add_response("cancel", "Cancel")
         ctl = Gtk.EventControllerKey()
@@ -764,9 +769,13 @@ class Window(Adw.ApplicationWindow):
                 dlg.set_body("Use it with Ctrl, Alt, Shift or Super")
                 return True
             accel = Gtk.accelerator_name(Gdk.keyval_to_lower(keyval), mods)
-            self.set("hotkey", accel)
-            self.hk_label.set_label(pretty(accel))
-            self.hk_row.set_subtitle("")
+            other = "record_hotkey" if key == "hotkey" else "hotkey"
+            if accel == self.cfg[other]:
+                dlg.set_body("That key is already used for the other action")
+                return True
+            self.set(key, accel)
+            label.set_label(pretty(accel))
+            row.set_subtitle(subtitle or "")
             dlg.close()
             return True
 

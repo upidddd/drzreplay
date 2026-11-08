@@ -8,6 +8,7 @@ usage: drzreplay [command]
   stop           stop the recorder
   restart        restart the recorder
   save [--seconds N]  save a replay now (optionally only the last N seconds)
+  record [start|stop] start / stop recording a full video (no argument: toggle)
   status         show what the recorder is doing
   preview-intro  play the intro animation
   --version
@@ -55,6 +56,20 @@ def cmd_restart(args):
     return cmd_start(args)
 
 
+def cmd_record(args):
+    pid = C.daemon_pid()
+    if not pid:
+        print(f"{C.APP_NAME} is not running (drzreplay start)", file=sys.stderr)
+        return 1
+    cmd = {"start": "record-start", "stop": "record-stop"}.get(args[0] if args else "", "record")
+    tmp = C.REQUEST + ".tmp"
+    with open(tmp, "w") as f:
+        f.write(cmd)
+    os.replace(tmp, C.REQUEST)
+    os.kill(pid, signal.SIGHUP)
+    return 0
+
+
 def cmd_status(args):
     from .recorder.hotkey import pretty
     pid = C.daemon_pid()
@@ -69,6 +84,12 @@ def cmd_status(args):
         print(f"buffer   : {st.get('buffered', 0):.0f}/{st.get('seconds')} s, {st.get('buffer_mb', 0):.0f} MB in RAM")
         ok = "ok" if st.get("hotkey_ok") else f"NOT working ({st.get('hotkey_error')})"
         print(f"hotkey   : {pretty(cfg['hotkey'])} — {ok}")
+        if cfg["record_hotkey"]:
+            ok = "ok" if st.get("record_hotkey_ok") else f"NOT working ({st.get('record_hotkey_error')})"
+            print(f"rec key  : {pretty(cfg['record_hotkey'])} — {ok}")
+        if st.get("file_recording"):
+            mins, secs = divmod(int(time.time() - st["file_recording"]), 60)
+            print(f"video    : recording, {mins}:{secs:02d}")
     print(f"replays  : {C.output_dir(cfg)}")
     return 0
 
@@ -115,7 +136,7 @@ def main():
     if cmd == "settings":
         from .ui import window
         return window.main(rest)
-    table = {"start": cmd_start, "stop": cmd_stop, "restart": cmd_restart, "status": cmd_status,
+    table = {"start": cmd_start, "stop": cmd_stop, "restart": cmd_restart, "status": cmd_status, "record": cmd_record,
              "preview-intro": cmd_preview_intro}
     if cmd not in table:
         print(__doc__)

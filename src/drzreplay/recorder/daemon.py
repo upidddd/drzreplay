@@ -1,6 +1,6 @@
 """Background recorder: ring buffer of short MPEG-TS chunks in RAM + tray + hotkey.
 
-Signals: SIGHUP = reload settings, SIGUSR1 = save a replay, SIGUSR2 = restart with the
+Signals: SIGHUP = reload settings (or run the command in RUNTIME/request), SIGUSR1 = save a replay, SIGUSR2 = restart with the
 newly installed code (sent by the package after an upgrade), SIGTERM = quit.
 """
 import fcntl
@@ -66,7 +66,7 @@ def build_cmd(cfg, enc, geom, info):
     if audio:
         cmd += ["-map", "[a]"]
 
-    gop = str(fps * C.SEGMENT)
+    gop = str(fps)                      # a keyframe every second: full recordings can start on time
     if enc == "nvenc":
         # raw bgr0 frames go straight to the GPU, colour conversion happens there too
         cmd += ["-c:v", "h264_nvenc", "-preset", "p1", "-tune", "ll", "-rc", "vbr", "-cq", str(q),
@@ -76,7 +76,7 @@ def build_cmd(cfg, enc, geom, info):
     else:
         cmd += ["-c:v", "libx264", "-preset", "ultrafast", "-tune", "zerolatency", "-crf", str(q),
                 "-pix_fmt", "yuv420p", "-g", gop, "-threads", "2"]
-    cmd += ["-force_key_frames", f"expr:gte(t,n_forced*{C.SEGMENT})"]
+    cmd += ["-force_key_frames", "expr:gte(t,n_forced)"]
     if audio:
         cmd += ["-c:a", "aac", "-b:a", "160k", "-ar", "48000", "-ac", "2"]
     return cmd + segment_args(cfg)
@@ -109,6 +109,9 @@ class Daemon:
         self.proc = None
         self.hk_proc = None
         self.hk_state = ("", False, "")
+        self.rk_proc = None                 # the second helper: start / stop recording
+        self.rk_state = ("", False, "")
+        self.filerec = None                 # recording a full video: {"dir", "t0", "copied", "n", "name"}
         self.paused = False
         self.state = "starting"
         self.error = ""
@@ -136,6 +139,8 @@ class Daemon:
 
     def start_recorder(self):
         self.stop_recorder()
+        if self.filerec:
+            self.filerec_copy(final=True)   # a settings change mid-recording: keep what's there
         self.clear_buffer()
         if self.wayland:
             self.start_wayland()
@@ -273,6 +278,8 @@ class Daemon:
             if time.time() - self.started > 20:
                 self.fails = 0
             # monitor layout changed -> restart with the new geometry
+            if self.filerec:
+                self.update_tray()          # the elapsed time in the tray menu
             if not self.wayland and int(time.time()) % 5 == 0 and system.capture_geometry(self.cfg) != self.geom:
                 self.start_recorder()
             self.write_status()
@@ -347,74 +354,225 @@ class Daemon:
             p.terminate()
         self.sub_proc = None
 
-    # ------------------------------------------------------------ hotkey
+    # ------------------------------------------------------------ recording a full video
+    def toggle_file_recording(self, *_):
+        if self.filerec:
+            self.stop_file_recording()
+        else:
+            self.start_file_recording()
+        return False
+
+    def start_file_recording(self):
+        """Every finished ring chunk is copied to disk until stopped, then joined without re-encoding."""
+        if self.filerec:
+            return
+        if self.paused or self.state != "recording":
+            self.notify("Turn recording on first.")
+            return
+        stamp = time.strftime("%Y-%m-%d %H-%M-%S")
+        d = os.path.join(C.output_dir(self.cfg), f".recording {stamp}")
+        try:
+            os.makedirs(d, exist_ok=True)
+        except OSError as e:
+            self.notify(f"Can't record: {e.strerror}")
+            return
+        self.filerec = {"dir": d, "t0": time.time(), "copied": set(), "n": 0,
+                        "name": f"{self.cfg['file_prefix'] or C.APP_NAME} {stamp}"}
+        self.click()
+        self.notify(f"Recording. Press {pretty(self.cfg['record_hotkey'])} again to stop.")
+        GLib.timeout_add_seconds(1, self.filerec_tick)
+        self.update_tray()
+        self.write_status()
+
+    def filerec_tick(self):
+        if not self.filerec:
+            return False
+        self.filerec_copy()
+        return True
+
+    def filerec_copy(self, final=False):
+        """Copy the chunks finished since the start (all of them, the open one too, when final)."""
+        rec = self.filerec
+        segs = []
+        for f in glob.glob(os.path.join(C.RUNTIME, "seg_*.ts")):
+            try:
+                st = os.stat(f)
+            except OSError:
+                continue
+            segs.append((st.st_mtime_ns, st.st_size, f))
+        segs.sort()
+        if not final:
+            segs = segs[:-1]                 # the newest chunk is still being written
+        for mtime, size, f in segs:
+            # a chunk last written before the start holds nothing of the recording (it's 5 s long,
+            # so the first one may begin up to 5 s early)
+            if mtime / 1e9 < rec["t0"] or (f, mtime) in rec["copied"] or not size:
+                continue
+            try:
+                shutil.copyfile(f, os.path.join(rec["dir"], f"{rec['n']:06d}.ts"))
+            except OSError:
+                continue
+            if not rec["n"]:
+                rec["first_end"] = mtime / 1e9          # when the first chunk was finished
+            rec["copied"].add((f, mtime))
+            rec["n"] += 1
+
+    def stop_file_recording(self, wait=False):
+        rec = self.filerec
+        if not rec:
+            return
+        self.filerec_copy(final=True)
+        self.filerec = None
+        self.click()
+        self.update_tray()
+        self.write_status()
+        length = time.time() - rec["t0"]
+
+        def work():
+            parts = sorted(glob.glob(os.path.join(rec["dir"], "*.ts")))
+            if not parts:
+                shutil.rmtree(rec["dir"], ignore_errors=True)
+                GLib.idle_add(self.notify, "The recording was empty.")
+                return
+            from . import save as S
+            # the first chunk began before the key was pressed: start at the keyframe nearest the press
+            first_len = S.probe(parts[0])[0]
+            inpoint = rec["t0"] - (rec.get("first_end", rec["t0"]) - first_len)
+            listfile = os.path.join(rec["dir"], "list.txt")
+            with open(listfile, "w") as f:
+                for i, p in enumerate(parts):
+                    f.write(f"file '{p}'\n")
+                    if i == 0 and 0.2 < inpoint < first_len:
+                        f.write(f"inpoint {inpoint:.3f}\n")
+            ext = "mkv" if self.cfg["container"] == "mkv" else "mp4"
+            out = os.path.join(C.output_dir(self.cfg), f"{rec['name']}.{ext}")
+            tmp = os.path.join(rec["dir"], f"out.{ext}")
+            cmd = ["nice", "-n", "10", "ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error", "-y",
+                   "-f", "concat", "-safe", "0", "-i", listfile, "-map", "0", "-c", "copy"]
+            if ext == "mp4":
+                cmd += ["-movflags", "+faststart"]
+            r = subprocess.run(cmd + [tmp], capture_output=True, text=True)
+            if r.returncode != 0 or not os.path.exists(tmp):
+                err = (r.stderr.strip().splitlines() or ["ffmpeg failed"])[-1]
+                GLib.idle_add(self.notify, f"Couldn't save the recording ({err}). The pieces are in {rec['dir']}")
+                return
+            os.replace(tmp, out)
+            shutil.rmtree(rec["dir"], ignore_errors=True)
+            size = os.path.getsize(out) / 1e9
+            mins, secs = divmod(int(length), 60)
+            res = S.notify(self.cfg, f"Recording saved: {os.path.basename(out)} · {mins}:{secs:02d} · "
+                           f"{size:.2f} GB" if size >= 0.1 else f"Recording saved: {os.path.basename(out)} · "
+                           f"{mins}:{secs:02d}", actions=[("play", "Play"), ("folder", "Show in folder")],
+                           wait=not wait)
+            if res and "play" in res:
+                subprocess.Popen(["xdg-open", out], start_new_session=True)
+            elif res and "folder" in res:
+                S.show_in_folder(out)
+
+        if wait:
+            work()
+        else:
+            threading.Thread(target=work, daemon=True).start()
+
+    def click(self):
+        if self.cfg["click_sound"] and shutil.which("paplay") and os.path.exists(C.CLICK_SOUND):
+            subprocess.Popen(["paplay", "--volume=30000", C.CLICK_SOUND], stdout=subprocess.DEVNULL,
+                             stderr=subprocess.DEVNULL, start_new_session=True)
+
+    # ------------------------------------------------------------ hotkeys
     def start_hotkey(self):
+        """Two global keys: save a replay (hotkey) and start / stop recording (record_hotkey)."""
         self.stop_hotkey()
-        accel = self.cfg["hotkey"]
-        if not accel:
-            self.hk_state = (accel, False, "no hotkey")
-            return
+        keys = {"save": self.cfg["hotkey"], "record": self.cfg["record_hotkey"]}
+        for name, accel in keys.items():
+            self.set_hk(name, (accel, False, "starting" if accel else "no hotkey"))
         if self.wayland:
-            self.start_portal_hotkey(accel)
+            self.start_portal_hotkey({k: a for k, a in keys.items() if a})
             return
-        self.hk_state = (accel, False, "starting")
+        for name, accel in keys.items():
+            if accel:
+                self.start_helper(name, accel)
+
+    def set_hk(self, name, state):
+        if name == "save":
+            self.hk_state = state
+        else:
+            self.rk_state = state
+
+    def on_hotkey(self, name):
+        if name == "save":
+            self.save()
+        else:
+            self.toggle_file_recording()
+        return False
+
+    def start_helper(self, name, accel):
         log = open(C.HOTKEY_LOG, "a")
         p = subprocess.Popen([sys.executable, "-m", "drzreplay.recorder.hotkey", accel], stdout=subprocess.PIPE,
                              stderr=log, text=True, env=C.child_env())
-        self.hk_proc = p
+        if name == "save":
+            self.hk_proc = p
+        else:
+            self.rk_proc = p
 
         def reader():
             failed = False
             for line in p.stdout:
                 line = line.strip()
-                log.write(f"{time.strftime('%H:%M:%S')} {p.pid} {line}\n")
+                log.write(f"{time.strftime('%H:%M:%S')} {p.pid} {name} {line}\n")
                 log.flush()
                 if line == "OK":
-                    self.hk_state = (accel, True, "")
+                    self.set_hk(name, (accel, True, ""))
                 elif line.startswith("FAIL"):
                     failed = True
-                    self.hk_state = (accel, False, line[5:])
+                    self.set_hk(name, (accel, False, line[5:]))
                     GLib.idle_add(self.notify, f"Hotkey {pretty(accel)} doesn't work: {line[5:]}.")
                 elif line == "PRESS":
-                    GLib.idle_add(self.save)
+                    GLib.idle_add(self.on_hotkey, name)
                 GLib.idle_add(self.write_status)
             p.wait()
-            log.write(f"{time.strftime('%H:%M:%S')} {p.pid} exited {p.returncode}\n")
+            log.write(f"{time.strftime('%H:%M:%S')} {p.pid} {name} exited {p.returncode}\n")
             log.close()
             if not failed:
-                GLib.timeout_add_seconds(2, self.revive_hotkey, p)
+                GLib.timeout_add_seconds(2, self.revive_hotkey, name, p)
 
         threading.Thread(target=reader, daemon=True).start()
 
-    def start_portal_hotkey(self, accel):
+    def start_portal_hotkey(self, keys):
         from . import wayland as WL
-        self.hk_state = (accel, False, "starting")
 
         def state(ok, err):
-            self.hk_state = (accel, ok, err)
+            for name, accel in keys.items():
+                self.set_hk(name, (accel, ok, err))
             self.write_status()
 
         try:
-            self.shortcuts = WL.Shortcuts(accel, self.save_debounced, state)
+            self.shortcuts = WL.Shortcuts(keys, self.on_portal_press, state)
             self.shortcuts.start()
         except Exception as e:
             state(False, str(e))
 
-    def save_debounced(self):
+    def on_portal_press(self, name):
         now = time.time()
-        if now - getattr(self, "_last_press", 0) > 0.5:
-            self._last_press = now
-            self.save()
+        last = getattr(self, "_last_press", {})
+        if now - last.get(name, 0) > 0.5:
+            last[name] = now
+            self._last_press = last
+            self.on_hotkey(name)
 
-    def revive_hotkey(self, p):
-        if self.hk_proc is p:      # the helper died on its own: bring the hotkey back
-            self.start_hotkey()
+    def revive_hotkey(self, name, p):
+        # the helper died on its own: bring that hotkey back
+        if (self.hk_proc if name == "save" else self.rk_proc) is p:
+            accel = self.cfg["hotkey" if name == "save" else "record_hotkey"]
+            if accel:
+                self.start_helper(name, accel)
         return False
 
     def stop_hotkey(self):
-        if self.hk_proc and self.hk_proc.poll() is None:
-            self.hk_proc.terminate()
-        self.hk_proc = None
+        for p in (self.hk_proc, self.rk_proc):
+            if p and p.poll() is None:
+                p.terminate()
+        self.hk_proc = self.rk_proc = None
         if self.shortcuts:
             self.shortcuts.close()
             self.shortcuts = None
@@ -498,6 +656,7 @@ class Daemon:
     def set_paused(self, paused):
         self.paused = paused
         if paused:
+            self.stop_file_recording()
             self.stop_recorder()
             self.clear_buffer()
             self.state = "paused"
@@ -514,14 +673,32 @@ class Daemon:
             C.save(cfg)
             self.cfg[key] = value
 
+    def handle_request(self):
+        """`drzreplay record` and the window's Record button leave a command here, then send SIGHUP."""
+        try:
+            with open(C.REQUEST) as f:
+                cmd = f.read().strip()
+            os.remove(C.REQUEST)
+        except OSError:
+            return False
+        if cmd == "record":
+            self.toggle_file_recording()
+        elif cmd == "record-start":
+            self.start_file_recording()
+        elif cmd == "record-stop":
+            self.stop_file_recording()
+        return True
+
     def reload(self, *_):
+        if self.handle_request():
+            return True
         old = self.cfg
         self.cfg = C.load()
         if self.state == "error" or any(old.get(k) != self.cfg.get(k) for k in C.RECORDER_KEYS):
             self.fails, self.audio_off = 0, False
             if not self.paused:
                 self.start_recorder()
-        if old["hotkey"] != self.cfg["hotkey"]:
+        if old["hotkey"] != self.cfg["hotkey"] or old["record_hotkey"] != self.cfg["record_hotkey"]:
             self.start_hotkey()
         if old["tray"] != self.cfg["tray"]:
             self.setup_tray()
@@ -541,6 +718,9 @@ class Daemon:
             "seconds": self.cfg["seconds"], "buffered": buffered, "segments": len(segs),
             "buffer_mb": sum(os.path.getsize(s) for s in segs if os.path.exists(s)) / 1e6,
             "hotkey": accel, "hotkey_ok": ok, "hotkey_error": err, "audio_off": self.audio_off,
+            "record_hotkey": self.rk_state[0], "record_hotkey_ok": self.rk_state[1],
+            "record_hotkey_error": self.rk_state[2], "started": self.started,
+            "file_recording": self.filerec["t0"] if self.filerec else None,
             "encoders": self.info["available"], "time": time.time()})
         return False
 
@@ -574,6 +754,7 @@ class Daemon:
         return self.quit()
 
     def quit(self, *_):
+        self.stop_file_recording(wait=True)      # don't lose a running recording on quit / upgrade
         if self.cast:
             self.cast.close()
             self.cast = None

@@ -1,4 +1,5 @@
 """Tray icon (GTK 3): AyatanaAppIndicator when present, XEmbed StatusIcon otherwise."""
+import time
 import warnings
 
 import gi
@@ -27,12 +28,12 @@ class Tray:
         self.item_intro = Gtk.CheckMenuItem(label="Intro")
         self.item_intro.set_active(bool(self.d.cfg["intro"]))
         self.item_intro.connect("toggled", lambda it: self.d.set_option("intro", it.get_active()))
-        self.item_custom = Gtk.MenuItem()      # "Save last N s", N set in the window's Save menu
-        self.item_custom.connect("activate", lambda *_: self.d.save(seconds=int(self.d.cfg["custom_seconds"])))
+        self.item_record = Gtk.MenuItem()     # start / stop recording a full video
+        self.item_record.connect("activate", self.d.toggle_file_recording)
         self.item_update = Gtk.MenuItem(label="Update")
         self.item_update.connect("activate", self.d.run_update)
         self.item_update.set_no_show_all(True)
-        items = [self.item_update, self.item_save, self.item_custom, Gtk.SeparatorMenuItem(),
+        items = [self.item_update, self.item_save, self.item_record, Gtk.SeparatorMenuItem(),
                  self.item_pause, self.item_intro, Gtk.SeparatorMenuItem()]
         for label, cb in (("Open folder", self.d.open_folder), ("Settings", self.d.open_settings)):
             it = Gtk.MenuItem(label=label)
@@ -72,10 +73,16 @@ class Tray:
         if self.item_intro.get_active() != bool(d.cfg["intro"]):
             self.item_intro.set_active(bool(d.cfg["intro"]))
         self.item_save.set_label(f"Save replay ({pretty(d.cfg['hotkey'])})")
-        self.item_custom.set_label(f"Save last {int(d.cfg['custom_seconds'])} s")
         on = not d.paused and d.state == "recording"
-        for it in (self.item_save, self.item_custom):
-            it.set_sensitive(on)
+        self.item_save.set_sensitive(on)
+        if d.filerec:
+            mins, secs = divmod(int(time.time() - d.filerec["t0"]), 60)
+            self.item_record.set_label(f"Stop recording · {mins}:{secs:02d}")
+            self.item_record.set_sensitive(True)
+        else:
+            key = f" ({pretty(d.cfg['record_hotkey'])})" if d.cfg["record_hotkey"] else ""
+            self.item_record.set_label(f"Start recording{key}")
+            self.item_record.set_sensitive(on)
         if self.icon:
             self.icon.set_tooltip_text(f"{C.APP_NAME}: " + ("paused" if d.paused else "recording"))
 

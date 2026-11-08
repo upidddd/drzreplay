@@ -154,7 +154,23 @@ def build_cmd(cfg, enc, hwdec, info, listfile, start, length, has_audio, native,
     return cmd
 
 
+MIN_SINCE_LAST = 3.0     # a quick second press still gets a few seconds, not an empty clip
+
+
+def since_last_save(cfg, pressed):
+    """Seconds recorded since the previous replay ended, or None when it doesn't apply
+    (option off, first replay, or the recorder restarted since — then its buffer is new anyway)."""
+    if not cfg.get("replay_since_last"):
+        return None
+    last = C.read_json(C.LAST_SAVE, {}) or {}
+    session = (C.read_json(C.STATUSFILE, {}) or {}).get("started")
+    if not last or not session or last.get("session") != session:
+        return None
+    return max(MIN_SINCE_LAST, pressed - float(last.get("end", 0)))
+
+
 def main(args):
+    pressed = time.time()           # before waiting for an earlier save: this is when the key was hit
     cfg = C.load()
     os.makedirs(C.RUNTIME, exist_ok=True)
     lock = open(os.path.join(C.RUNTIME, "save.lock"), "w")
@@ -180,6 +196,10 @@ def main(args):
     want = float(cfg["seconds"])
     if "--seconds" in args:            # "save last 15 s" from the tray / settings
         want = min(want, float(args[args.index("--seconds") + 1]))
+    else:
+        since = since_last_save(cfg, pressed)
+        if since is not None:          # 15 s after the last replay: save those 15 s, not the whole buffer again
+            want = min(want, since)
 
     # copy the needed chunks (newest first) so the recorder cannot overwrite them mid-export
     snap = os.path.join(C.RUNTIME, "snap")
@@ -243,6 +263,7 @@ def main(args):
         return 1
     os.replace(tmp, out)
     shutil.rmtree(snap, ignore_errors=True)
+    C.write_json(C.LAST_SAVE, {"end": pressed, "session": (C.read_json(C.STATUSFILE, {}) or {}).get("started")})
     cleanup(cfg, out)
     fcntl.flock(lock, fcntl.LOCK_UN)
     print(out)
