@@ -440,7 +440,12 @@ class Window(Adw.ApplicationWindow):
             self.clips_more.set_label(f"{hidden} older clip{'s' * (hidden != 1)} in the folder")
 
     def clip_row(self, path, mtime, size):
-        row = Adw.ActionRow(title=human_date(mtime), subtitle=human_size(size), activatable=True,
+        from ..recorder.trim import is_auto_name
+        # clips the user renamed show their name, the others the date they were saved
+        date = None if is_auto_name(path) else human_date(mtime)
+        title = os.path.splitext(os.path.basename(path))[0] if date else human_date(mtime)
+        row = Adw.ActionRow(title=GLib.markup_escape_text(title), activatable=True,
+                            subtitle=" · ".join(filter(None, (date, human_size(size)))),
                             tooltip_text=os.path.basename(path))
         pic = Gtk.Picture(content_fit=Gtk.ContentFit.COVER, css_classes=["thumb"], valign=Gtk.Align.CENTER,
                           margin_top=6, margin_bottom=6, can_shrink=True)
@@ -455,13 +460,15 @@ class Window(Adw.ApplicationWindow):
                 pic.set_filename(jpg)
             if dur:
                 row.duration = dur
-                row.set_subtitle(f"{human_time(dur)} · {human_size(size)}")
+                row.set_subtitle(" · ".join(filter(None, (date, human_time(dur), human_size(size)))))
             return False
 
         self.thumbs.request(path, loaded)
         row.connect("activated", lambda *_: self.open_uri(path))
         row.add_suffix(self.button(icon="edit-cut-symbolic", tip="Trim",
                                    cb=lambda *_: self.trim_clip(path, row.duration)))
+        row.add_suffix(self.button(icon="document-edit-symbolic", tip="Rename",
+                                   cb=lambda *_: self.rename_clip(path)))
         row.add_suffix(self.button(icon="edit-copy-symbolic", tip="Copy (paste into Discord, Telegram…)",
                                    cb=lambda *_: self.copy_clip(path)))
         row.add_suffix(self.button(icon="folder-open-symbolic", tip="Show in folder",
@@ -544,6 +551,32 @@ class Window(Adw.ApplicationWindow):
         save.connect("clicked", do_save)
         dlg.connect("closed", lambda *_: media.pause())
         dlg.present(self)
+
+    def rename_clip(self, path):
+        entry = Gtk.Entry(text=os.path.splitext(os.path.basename(path))[0], activates_default=True)
+        dlg = Adw.AlertDialog(heading="Rename clip", extra_child=entry, close_response="cancel",
+                              default_response="rename")
+        dlg.add_response("cancel", "Cancel")
+        dlg.add_response("rename", "Rename")
+        dlg.set_response_appearance("rename", Adw.ResponseAppearance.SUGGESTED)
+
+        def response(_d, r):
+            if r != "rename":
+                return
+            from ..recorder.trim import rename
+            try:
+                new = rename(path, entry.get_text())
+            except ValueError as e:
+                self.toast(f"Couldn't rename: {e}")
+                return
+            if new != path:
+                self.toast("Renamed")
+                self.load_clips(True)
+
+        dlg.connect("response", response)
+        dlg.present(self)
+        entry.grab_focus()
+        entry.select_region(0, -1)
 
     def copy_clip(self, path):
         self.get_clipboard().set_content(file_provider(path))

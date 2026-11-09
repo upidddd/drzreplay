@@ -1,10 +1,42 @@
-"""Cut a piece out of a saved clip (Clips tab → Trim), frame-exact, re-encoded like a normal save."""
+"""Clips tab: cut a piece out of a saved clip (frame-exact, re-encoded like a normal save) and rename clips."""
 import os
+import re
 import shutil
 import subprocess
 
 from ..core import config as C
 from ..core import system
+
+# names the app gives clips itself: "<prefix> 2026-11-09 14-03-27", maybe " (trimmed)" / " (trimmed 2)"
+AUTO_NAME = re.compile(r"\d{4}-\d{2}-\d{2} \d{2}-\d{2}-\d{2}(?: \(trimmed(?: \d+)?\))?$")
+
+
+def is_auto_name(path):
+    return bool(AUTO_NAME.search(os.path.splitext(os.path.basename(path))[0]))
+
+
+def rename(path, name):
+    """Give the clip a new name (the extension stays). Returns the new path; ValueError says what's wrong."""
+    name = name.strip()
+    ext = os.path.splitext(path)[1]
+    if name.lower().endswith(ext.lower()):
+        name = name[:-len(ext)].rstrip()
+    if not name or name in (".", ".."):
+        raise ValueError("The name is empty")
+    if "/" in name or "\0" in name:
+        raise ValueError("A name can't contain /")
+    if name.startswith("."):
+        raise ValueError("A name starting with a dot would hide the clip")
+    new = os.path.join(os.path.dirname(path), name + ext)
+    if new == path:
+        return new
+    if os.path.exists(new):
+        raise ValueError("A clip with this name already exists")
+    try:
+        os.rename(path, new)
+    except OSError as e:
+        raise ValueError(e.strerror or "Couldn't rename") from None
+    return new
 
 
 def output_path(src):

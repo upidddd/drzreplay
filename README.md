@@ -48,6 +48,7 @@ When you want to keep the moment, one key saves it.
 - **Clips tab.** Thumbnails, length and size of every clip. Click to play, **drag a clip
   straight into Discord or Telegram**, copy it, show it in the folder or move it to the trash.
 - **Trim.** The scissors on a clip open it with a player: pick the start and the end, get a trimmed copy.
+- **Rename.** The pencil gives a clip your own name; the list shows it instead of the date.
 - **Clean up by itself.** Keep only the last N clips or at most N GB.
 - **Updates.** When a new version is out you get a notification and an *Update* item in the tray;
   one click starts the installer.
