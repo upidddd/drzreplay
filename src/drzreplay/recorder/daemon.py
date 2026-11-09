@@ -128,7 +128,7 @@ class Daemon:
         self.cast = None            # Wayland screen-sharing session
         self.shortcuts = None
         self.gst_proc = None
-        self.info = self.wayland_encoders() if self.wayland else system.detect_encoders()
+        self.info = None            # the encoders: probed in run(), after the tray icon is up
 
     # ------------------------------------------------------------ recorder
     def clear_buffer(self):
@@ -271,6 +271,8 @@ class Daemon:
         self.proc = self.gst_proc = None
 
     def health(self):
+        if self.tray:
+            self.tray.refresh_icon()        # the red dot follows the capture, it may stop on its own
         if self.paused or (self.state == "error" and self.proc is None) or (
                 self.wayland and self.proc is None and self.state == "starting"):
             self.write_status()             # paused, broken, or waiting for the screen-sharing dialog
@@ -804,7 +806,12 @@ class Daemon:
             f.write(str(os.getpid()))
         self.loop = GLib.MainLoop()
         self.kill_stale_recorders()
-        self.setup_tray()
+        self.setup_tray()                    # first: the icon shows up right away
+        ctx = GLib.MainContext.default()      # let the tray register before the encoder probe
+        for _ in range(100):
+            if not ctx.iteration(False):
+                break
+        self.info = self.wayland_encoders() if self.wayland else system.detect_encoders()
         if self.paused:                      # started for a full recording with replays off
             self.state = "paused"
         else:

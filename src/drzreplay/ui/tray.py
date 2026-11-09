@@ -1,4 +1,5 @@
 """Tray icon (GTK 3): AyatanaAppIndicator when present, XEmbed StatusIcon otherwise."""
+import os
 import time
 import warnings
 
@@ -20,6 +21,7 @@ except (ValueError, ImportError):
 class Tray:
     def __init__(self, daemon):
         self.d = daemon
+        self.icon_path = C.ICON_PATH
         self.menu = Gtk.Menu()
         self.item_save = Gtk.MenuItem(label="Save replay")
         self.item_save.connect("activate", self.d.save)
@@ -67,6 +69,19 @@ class Tray:
                     None, None, Gtk.StatusIcon.position_menu, i, b, t))
             self.ind = None
 
+    def refresh_icon(self):
+        """The red dot: the screen is being captured (replay buffer or a full recording)."""
+        d = self.d
+        on = bool(d.filerec) or (d.state == "recording" and not d.paused and d.proc is not None)
+        path = C.ICON_REC if on and os.path.exists(C.ICON_REC) else C.ICON_PATH
+        if path == self.icon_path:
+            return
+        self.icon_path = path
+        if self.ind:
+            self.ind.set_icon_full(path, "Recording" if on else C.APP_NAME)
+        if self.icon:
+            self.icon.set_from_file(path)
+
     def replays_off(self):
         return self.d.paused or self.d.rec_only
 
@@ -89,6 +104,7 @@ class Tray:
             key = f" ({pretty(d.cfg['record_hotkey'])})" if d.cfg["record_hotkey"] else ""
             self.item_record.set_label(f"Start recording{key}")
             self.item_record.set_sensitive(on or d.paused)    # with replays off it records just the video
+        self.refresh_icon()
         if self.icon:
             self.icon.set_tooltip_text(f"{C.APP_NAME}: " + ("paused" if self.replays_off() else "recording"))
 

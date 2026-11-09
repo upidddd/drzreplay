@@ -15,6 +15,7 @@ INSTALL_CMD = f"curl -fsSL https://github.com/{REPO}/releases/latest/download/in
 PKG_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
 ASSETS = os.path.join(PKG_DIR, "drzreplay", "assets")
 ICON_PATH = os.path.join(ASSETS, "icons", "drzreplay.svg")
+ICON_REC = os.path.join(ASSETS, "icons", "drzreplay-rec.svg")      # with a red dot: capturing
 CLICK_SOUND = os.path.join(ASSETS, "sounds", "click.wav")
 
 CONF_DIR = os.path.join(os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config"), "drzreplay")
