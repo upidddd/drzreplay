@@ -39,9 +39,12 @@ class Tray:
             it = Gtk.MenuItem(label=label)
             it.connect("activate", cb)
             items.append(it)
+        # starts the recorder over (a running full recording is saved first): when something got stuck
+        restart = Gtk.MenuItem(label="Restart")
+        restart.connect("activate", self.d.restart)
         quit_ = Gtk.MenuItem(label="Quit")
         quit_.connect("activate", self.d.quit)
-        items += [Gtk.SeparatorMenuItem(), quit_]
+        items += [Gtk.SeparatorMenuItem(), restart, quit_]
         for it in items:
             self.menu.append(it)
         self.menu.show_all()

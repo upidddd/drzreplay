@@ -758,6 +758,8 @@ class Daemon:
         self.reexec = True
         return self.quit()
 
+    restart = upgrade       # the same thing: quit cleanly, then start again in this process
+
     def quit(self, *_):
         self.stop_file_recording(wait=True)      # don't lose a running recording on quit / upgrade
         if self.cast:
