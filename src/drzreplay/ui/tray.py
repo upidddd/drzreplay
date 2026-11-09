@@ -24,7 +24,7 @@ class Tray:
         self.item_save = Gtk.MenuItem(label="Save replay")
         self.item_save.connect("activate", self.d.save)
         self.item_pause = Gtk.MenuItem(label="Pause")
-        self.item_pause.connect("activate", lambda *_: self.d.set_paused(not self.d.paused))
+        self.item_pause.connect("activate", lambda *_: self.d.set_paused(not self.replays_off()))
         self.item_intro = Gtk.CheckMenuItem(label="Intro")
         self.item_intro.set_active(bool(self.d.cfg["intro"]))
         self.item_intro.connect("toggled", lambda it: self.d.set_option("intro", it.get_active()))
@@ -67,16 +67,19 @@ class Tray:
                     None, None, Gtk.StatusIcon.position_menu, i, b, t))
             self.ind = None
 
+    def replays_off(self):
+        return self.d.paused or self.d.rec_only
+
     def update(self):
         d = self.d
-        self.item_pause.set_label("Resume" if d.paused else "Pause")
+        self.item_pause.set_label("Resume" if self.replays_off() else "Pause")
         if d.update:
             self.item_update.set_label(f"Update to {d.update}…")
         self.item_update.set_visible(bool(d.update))
         if self.item_intro.get_active() != bool(d.cfg["intro"]):
             self.item_intro.set_active(bool(d.cfg["intro"]))
         self.item_save.set_label(f"Save replay ({pretty(d.cfg['hotkey'])})")
-        on = not d.paused and d.state == "recording"
+        on = not d.paused and not d.rec_only and d.state == "recording"
         self.item_save.set_sensitive(on)
         if d.filerec:
             mins, secs = divmod(int(time.time() - d.filerec["t0"]), 60)
@@ -85,9 +88,9 @@ class Tray:
         else:
             key = f" ({pretty(d.cfg['record_hotkey'])})" if d.cfg["record_hotkey"] else ""
             self.item_record.set_label(f"Start recording{key}")
-            self.item_record.set_sensitive(on)
+            self.item_record.set_sensitive(on or d.paused)    # with replays off it records just the video
         if self.icon:
-            self.icon.set_tooltip_text(f"{C.APP_NAME}: " + ("paused" if d.paused else "recording"))
+            self.icon.set_tooltip_text(f"{C.APP_NAME}: " + ("paused" if self.replays_off() else "recording"))
 
     def hide(self):
         if self.ind:

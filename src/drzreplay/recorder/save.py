@@ -196,6 +196,10 @@ def main(args):
         subprocess.Popen(["paplay", "--volume=30000", C.CLICK_SOUND], stdout=subprocess.DEVNULL,
                          stderr=subprocess.DEVNULL, start_new_session=True)
 
+    if C.daemon_pid() and (C.read_json(C.STATUSFILE, {}) or {}).get("replays_off"):
+        # paused, or capturing only for a full recording
+        notify(cfg, "Replays are off. Turn recording on in the window or the tray.", "dialog-error", "critical")
+        return 1
     segs = sorted(glob.glob(os.path.join(C.RUNTIME, "seg_*.ts")), key=os.path.getmtime)
     if segs and sum(os.path.getsize(s) for s in segs) < 200_000:
         time.sleep(1.5)        # recorder just started: give it a moment to write something

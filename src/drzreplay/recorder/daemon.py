@@ -113,6 +113,7 @@ class Daemon:
         self.rk_state = ("", False, "")
         self.filerec = None                 # recording a full video: {"dir", "t0", "copied", "n", "name"}
         self.paused = False
+        self.rec_only = False       # replays are off, the screen is captured only for a full recording
         self.state = "starting"
         self.error = ""
         self.enc = None
@@ -366,8 +367,12 @@ class Daemon:
         """Every finished ring chunk is copied to disk until stopped, then joined without re-encoding."""
         if self.filerec:
             return
-        if self.paused or self.state != "recording":
-            self.notify("Turn recording on first.")
+        if self.paused:
+            # replays are off: capture just for this video, and stop again when it ends
+            self.rec_only, self.paused, self.fails = True, False, 0
+            self.start_recorder()
+        elif self.state != "recording":
+            self.notify("The recorder isn't working, see Recorder log in the window menu.")
             return
         stamp = time.strftime("%Y-%m-%d %H-%M-%S")
         d = os.path.join(C.output_dir(self.cfg), f".recording {stamp}")
@@ -421,9 +426,14 @@ class Daemon:
         rec = self.filerec
         if not rec:
             return
+        back_off, self.rec_only = self.rec_only, False
+        if back_off:
+            self.stop_recorder()             # flushes the open chunk; nothing else needs the capture
         self.filerec_copy(final=True)
         self.filerec = None
         self.click()
+        if back_off:
+            self.set_paused(True)            # replays stay off, as they were
         self.update_tray()
         self.write_status()
         length = time.time() - rec["t0"]
@@ -655,6 +665,12 @@ class Daemon:
         return False
 
     def set_paused(self, paused):
+        if not paused and self.rec_only:
+            # replays turned on during a recording: the capture is already running, just keep it
+            self.rec_only = False
+            self.update_tray()
+            self.write_status()
+            return
         self.paused = paused
         if paused:
             self.stop_file_recording()
@@ -682,7 +698,9 @@ class Daemon:
             os.remove(C.REQUEST)
         except OSError:
             return False
-        if cmd == "record":
+        if cmd in ("pause", "resume"):
+            self.set_paused(cmd == "pause")
+        elif cmd == "record":
             self.toggle_file_recording()
         elif cmd == "record-start":
             self.start_file_recording()
@@ -726,6 +744,7 @@ class Daemon:
             "record_hotkey": self.rk_state[0], "record_hotkey_ok": self.rk_state[1],
             "record_hotkey_error": self.rk_state[2], "started": self.started,
             "file_recording": self.filerec["t0"] if self.filerec else None,
+            "replays_off": self.paused or self.rec_only,
             "encoders": self.info["available"], "time": time.time()})
         return False
 
@@ -786,7 +805,10 @@ class Daemon:
         self.loop = GLib.MainLoop()
         self.kill_stale_recorders()
         self.setup_tray()
-        self.start_recorder()
+        if self.paused:                      # started for a full recording with replays off
+            self.state = "paused"
+        else:
+            self.start_recorder()
         self.start_hotkey()
         self.start_audio_follow()
         cache = C.read_json(C.UPDATE_CACHE, {})
@@ -794,14 +816,15 @@ class Daemon:
             self.notify(f"Updated to {C.VERSION}. Still recording.")
         if cache.get("running") != C.VERSION:
             C.write_json(C.UPDATE_CACHE, {**cache, "running": C.VERSION})
+        # before the first status: `drzreplay record` waits for it, then sends SIGHUP
+        for sig, cb in ((signal.SIGHUP, self.reload), (signal.SIGUSR1, lambda *_: (self.save(), True)[1]),
+                        (signal.SIGUSR2, self.upgrade), (signal.SIGTERM, self.quit), (signal.SIGINT, self.quit)):
+            GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, sig, cb)
         self.update_tray()
         self.write_status()
         GLib.timeout_add_seconds(1, self.health)
         GLib.timeout_add_seconds(60, lambda: (self.check_update(), False)[1])
         GLib.timeout_add_seconds(6 * 3600, self.check_update)
-        for sig, cb in ((signal.SIGHUP, self.reload), (signal.SIGUSR1, lambda *_: (self.save(), True)[1]),
-                        (signal.SIGUSR2, self.upgrade), (signal.SIGTERM, self.quit), (signal.SIGINT, self.quit)):
-            GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, sig, cb)
         try:
             self.loop.run()
         finally:
@@ -823,8 +846,11 @@ def main(args):
         return 1
     GLib.set_prgname("drzreplay")
     d = Daemon(use_tray="--no-tray" not in args)
+    d.paused = "--paused" in args
     d.run()
     if d.reexec:
         lock.close()
+        # come back the way it was: replays on, or off
+        args = [a for a in args if a != "--paused"] + (["--paused"] if d.paused else [])
         os.execv(sys.executable, [sys.executable, "-m", "drzreplay", "daemon"] + args)
     return 0

@@ -58,6 +58,14 @@ def cmd_restart(args):
 
 def cmd_record(args):
     pid = C.daemon_pid()
+    if not pid and (args[:1] or ["start"])[0] != "stop":
+        # not running at all: start it with replays off, just for this video
+        cmd_start(["--paused"])
+        for _ in range(50):
+            pid = C.daemon_pid()
+            if pid and (C.read_json(C.STATUSFILE, {}) or {}).get("pid") == pid:
+                break
+            time.sleep(0.1)
     if not pid:
         print(f"{C.APP_NAME} is not running (drzreplay start)", file=sys.stderr)
         return 1

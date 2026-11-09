@@ -317,6 +317,7 @@ class Window(Adw.ApplicationWindow):
         self.rec_btn = Gtk.Button(css_classes=["pill", "rec-btn"], halign=Gtk.Align.CENTER, margin_top=18)
         self.rec_btn_content = Adw.ButtonContent(icon_name="media-record-symbolic", label="Start recording")
         self.rec_btn.set_child(self.rec_btn_content)
+        # works with replays off too: then the screen is captured only for this video
         self.rec_btn.connect("clicked", lambda *_: self.daemon_cmd("record"))
         box.append(self.rec_btn)
         self.rec_hint = Gtk.Label(css_classes=["dim-label", "save-hint"])
@@ -613,6 +614,10 @@ class Window(Adw.ApplicationWindow):
         self.ver_row.add_suffix(self.ver_btn)
         g.add(self.ver_row)
         page.add(g)
+
+        g = Adw.PreferencesGroup()
+        g.add(Gtk.Label(label="privet mmpd", css_classes=["dim-label", "caption"], margin_top=12))
+        page.add(g)
         return page
 
     def update_sensitivity(self):
@@ -635,10 +640,11 @@ class Window(Adw.ApplicationWindow):
         pid = C.daemon_pid()
         st = C.read_json(C.STATUSFILE, {}) if pid else {}
         state = st.get("state") if pid else None
+        replays_off = bool(st.get("replays_off"))
         self._busy = True
-        self.rec_switch.set_active(state in ("recording", "starting"))
+        self.rec_switch.set_active(state in ("recording", "starting") and not replays_off)
         self._busy = False
-        recording = state == "recording"
+        recording = state == "recording" and not replays_off
         if recording:
             self.rec_dot.add_css_class("rec-on")
         else:
@@ -651,8 +657,8 @@ class Window(Adw.ApplicationWindow):
             enc = system.ENCODER_LABELS.get(st.get("encoder"), st.get("encoder") or "")
             extra = " · no sound" if st.get("audio_off") else ""
             self.rec_row.set_subtitle(f"{g[0]}×{g[1]} · {st.get('fps')} fps · {enc}{extra}")
-        elif state == "paused":
-            self.rec_row.set_subtitle("Paused")
+        elif state == "paused" or replays_off:
+            self.rec_row.set_subtitle("Off · Start recording still works")
         elif state == "error":
             self.rec_row.set_subtitle(st.get("error") or "Error")
         else:
@@ -684,7 +690,7 @@ class Window(Adw.ApplicationWindow):
             self.rec_btn_content.set_label("Start recording")
             self.rec_btn_content.set_icon_name("media-record-symbolic")
             self.rec_btn.remove_css_class("destructive-action")
-        self.rec_btn.set_sensitive(bool(since) or recording)
+        self.rec_btn.set_sensitive(bool(since) or state in ("recording", "paused") or not pid)
         self.load_clips()
         return True
 
@@ -696,10 +702,13 @@ class Window(Adw.ApplicationWindow):
         if sw.get_active():
             if not pid:
                 self.start_daemon()
-            elif st.get("state") in ("paused", "error"):
+            elif st.get("state") == "error":
                 self.start_daemon("restart")
+            elif st.get("replays_off"):
+                self.daemon_request("resume")
         elif pid:
-            os.kill(pid, signal.SIGTERM)
+            # paused, not quit: the hotkeys stay, so Start recording works with replays off too
+            self.daemon_request("pause")
 
     def choose_screen(self, *_):
         from ..recorder.wayland import ScreenCast
@@ -713,6 +722,17 @@ class Window(Adw.ApplicationWindow):
             self.flush()
         subprocess.Popen(C.launcher() + [cmd], start_new_session=True,
                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+    def daemon_request(self, cmd):
+        """A command for the running recorder (see Daemon.handle_request)."""
+        pid = C.daemon_pid()
+        if not pid:
+            return
+        tmp = C.REQUEST + ".tmp"
+        with open(tmp, "w") as f:
+            f.write(cmd)
+        os.replace(tmp, C.REQUEST)
+        os.kill(pid, signal.SIGHUP)
 
     def daemon_cmd(self, *cmd):
         subprocess.Popen(C.launcher() + list(cmd), start_new_session=True,

@@ -42,6 +42,7 @@ When you want to keep the moment, one key saves it.
   couple of seconds of every replay. No sound, nothing added before the moment itself.
 - **Full recordings too.** Alt+R starts recording a whole video, Alt+R again stops it. It uses the same
   encoder, so it costs nothing extra, and the file is ready a second after you stop.
+  It works with replays turned off too: then the screen is captured only while the video is recorded.
 - **Sound.** System sound and your microphone, each with its own device and volume. Works with
   PulseAudio and PipeWire; plug in headphones and recording follows them without a restart.
 - **Clips tab.** Thumbnails, length and size of every clip. Click to play, **drag a clip
