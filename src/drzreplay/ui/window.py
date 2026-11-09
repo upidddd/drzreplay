@@ -142,7 +142,11 @@ class Window(Adw.ApplicationWindow):
 
         self.stack = Adw.ViewStack()
         header = Adw.HeaderBar()
-        header.pack_start(Gtk.Image(icon_name="drzreplay", pixel_size=16, margin_start=6, tooltip_text=C.APP_NAME))
+        # a small app icon on the left, unless the desktop already puts one there (XFCE: "icon,menu:…")
+        layout = Gtk.Settings.get_default().props.gtk_decoration_layout or ""
+        if "icon" not in layout.split(":")[0]:
+            header.pack_start(Gtk.Image(icon_name="drzreplay", pixel_size=16, margin_start=6,
+                                        tooltip_text=C.APP_NAME))
         header.set_title_widget(Adw.ViewSwitcher(stack=self.stack, policy=Adw.ViewSwitcherPolicy.WIDE))
         menu = Gio.Menu()
         menu.append("Recorder log", "app.open-log")
