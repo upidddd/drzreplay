@@ -293,7 +293,7 @@ class Window(Adw.ApplicationWindow):
         page = Adw.PreferencesPage()
 
         g = Adw.PreferencesGroup()
-        self.rec_row = Adw.ActionRow(title="Recording")
+        self.rec_row = Adw.ActionRow(title="Replays")
         self.rec_dot = Gtk.Image(icon_name="media-record-symbolic")
         self.rec_row.add_prefix(self.rec_dot)
         self.rec_switch = Gtk.Switch(valign=Gtk.Align.CENTER)
@@ -695,7 +695,7 @@ class Window(Adw.ApplicationWindow):
             extra = " · no sound" if st.get("audio_off") else ""
             self.rec_row.set_subtitle(f"{g[0]}×{g[1]} · {st.get('fps')} fps · {enc}{extra}")
         elif state == "paused" or replays_off:
-            self.rec_row.set_subtitle("Off · Start recording still works")
+            self.rec_row.set_subtitle("Off · turn on to save replays")
         elif state == "error":
             self.rec_row.set_subtitle(st.get("error") or "Error")
         else:
@@ -923,7 +923,7 @@ class Window(Adw.ApplicationWindow):
         self.auto_row.set_active(True)
         if not C.daemon_pid():
             self.start_daemon()
-        self.toast(f"Recording. Press {pretty(self.cfg['hotkey'])} to save a replay.")
+        self.toast(f"Replays are on. Press {pretty(self.cfg['hotkey'])} to save one.")
         return False
 
 

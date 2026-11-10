@@ -25,7 +25,7 @@ class Tray:
         self.menu = Gtk.Menu()
         self.item_save = Gtk.MenuItem(label="Save replay")
         self.item_save.connect("activate", self.d.save)
-        self.item_pause = Gtk.MenuItem(label="Pause")
+        self.item_pause = Gtk.MenuItem(label="Turn replays off")
         self.item_pause.connect("activate", lambda *_: self.d.set_paused(not self.replays_off()))
         self.item_intro = Gtk.CheckMenuItem(label="Intro")
         self.item_intro.set_active(bool(self.d.cfg["intro"]))
@@ -87,7 +87,7 @@ class Tray:
 
     def update(self):
         d = self.d
-        self.item_pause.set_label("Resume" if self.replays_off() else "Pause")
+        self.item_pause.set_label("Turn replays on" if self.replays_off() else "Turn replays off")
         if d.update:
             self.item_update.set_label(f"Update to {d.update}…")
         self.item_update.set_visible(bool(d.update))

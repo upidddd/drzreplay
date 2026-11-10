@@ -198,7 +198,7 @@ def main(args):
 
     if C.daemon_pid() and (C.read_json(C.STATUSFILE, {}) or {}).get("replays_off"):
         # paused, or capturing only for a full recording
-        notify(cfg, "Replays are off. Turn recording on in the window or the tray.", "dialog-error", "critical")
+        notify(cfg, "Replays are off. Turn them on in the window or the tray.", "dialog-error", "critical")
         return 1
     segs = sorted(glob.glob(os.path.join(C.RUNTIME, "seg_*.ts")), key=os.path.getmtime)
     if segs and sum(os.path.getsize(s) for s in segs) < 200_000:
