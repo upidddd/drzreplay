@@ -11,6 +11,7 @@ press **Alt+Z** and the last minute becomes a video file.
 [![Downloads](https://img.shields.io/github/downloads/upidddd/drzreplay/total?style=flat-square&color=2b3033)](https://github.com/upidddd/drzreplay/releases)
 [![Platform](https://img.shields.io/badge/Linux-X11%20%7C%20Wayland-2b3033?style=flat-square&logo=linux&logoColor=white)](#requirements)
 [![License](https://img.shields.io/github/license/upidddd/drzreplay?style=flat-square&color=2b3033)](LICENSE)
+[![Rust](https://img.shields.io/badge/Rust-2b3033?style=flat-square&logo=rust&logoColor=white)](https://www.rust-lang.org)
 
 ```sh
 curl -fsSL https://github.com/upidddd/drzreplay/releases/latest/download/install.sh | sh
