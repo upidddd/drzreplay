@@ -5,7 +5,7 @@ name: Build
 # Built on Ubuntu 24.04 so the program runs on Ubuntu 24.04+, Debian 13+ and what is based on them.
 on:
   push:
-    branches: [main]
+    branches: [main, rust]
     tags: ["v*"]
   pull_request:
   workflow_dispatch:

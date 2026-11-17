@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="src/drzreplay/assets/icons/drzreplay.svg" width="96" alt="">
+<img src="assets/icons/drzreplay.svg" width="96" alt="">
 
 # DrzReplay
 
@@ -177,15 +177,23 @@ drzreplay status               what the recorder is doing
 ## Project layout
 
 ```
-src/drzreplay/
-├── __main__.py        command line: drzreplay [save|start|stop|status…]
-├── core/              settings, paths, machine probing, autostart, update check
-├── recorder/          background recorder, Wayland capture, hotkey, saving and trimming clips
-├── ui/                window (Record / Clips / Settings) and tray icon
-└── assets/            icon, click sound, fonts of the intro
+src/
+├── main.rs            command line: drzreplay [save|start|stop|status…]
+├── config.rs          settings and paths
+├── system.rs          machine probing: monitors, encoders, sound devices; update check
+├── daemon.rs          the background recorder: ring buffer, hotkeys, tray, full recordings
+├── save.rs, trim.rs   turning the buffer into a clip; trimming and renaming clips
+├── ts.rs              reads MPEG-TS chunks directly (length, size, keyframes), no ffprobe
+├── hotkey.rs          global hotkeys on X11 (XInput2 raw events)
+├── wayland.rs         Wayland: screen-sharing and global-shortcuts portals, GStreamer
+├── tray.rs, xtray.rs  tray icon: StatusNotifier, or the classic XEmbed tray (LXDE…)
+├── intro.rs           the replay intro animation
+├── autostart.rs       start with the computer
+└── ui/                window (Record / Clips / Settings), GTK 4 + libadwaita
+assets/                icons, click sound, fonts of the intro
 packaging/
 ├── debian/            control file and maintainer scripts of the .deb
-├── files/             launcher, .desktop entries
+├── files/             .desktop entries, updater helper
 ├── build-deb.sh       build the package
 ├── release.sh         build and publish a GitHub release
 └── install.sh         the one-line installer
@@ -194,17 +202,19 @@ docs/                  screenshots for this page
 
 ## Building
 
+DrzReplay is written in Rust. You need `libgtk-4-dev libadwaita-1-dev pkg-config` (Ubuntu 24.04 / Debian 13 or newer) and a Rust toolchain.
+
 ```sh
-packaging/build-deb.sh     # -> dist/drzreplay_<version>_all.deb
+cargo build --release      # -> target/release/drzreplay
+packaging/build-deb.sh     # -> dist/drzreplay_<version>_amd64.deb
 packaging/release.sh       # build + publish a GitHub release (needs gh)
 ```
 
-Run from source without installing: `PYTHONPATH=src python3 -m drzreplay`.
-It needs `python3-gi gir1.2-gtk-4.0 gir1.2-adw-1 python3-pil ffmpeg x11-xserver-utils pulseaudio-utils`.
+Pushing a `v*` tag does the same in GitHub Actions.
 
 ## Credits
 
 Click sound from "Mechanical Sounds" by Brian MacIntosh (CC0, OpenGameArt.org).
-Fonts: Oswald and Inter (SIL OFL). Details in [`src/drzreplay/assets/CREDITS.txt`](src/drzreplay/assets/CREDITS.txt).
+Fonts: Oswald and Inter (SIL OFL). Details in [`assets/CREDITS.txt`](assets/CREDITS.txt).
 
 Code: [MIT](LICENSE).
