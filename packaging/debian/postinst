@@ -7,9 +7,9 @@ if [ "$1" = "configure" ]; then
     if command -v update-desktop-database >/dev/null 2>&1; then
         update-desktop-database -q /usr/share/applications || true
     fi
-    # upgrade: running recorders restart themselves with the new code
+    # upgrade: running recorders (the old Python one and this one) restart themselves with the new program
     if [ -n "$2" ]; then
-        pkill -USR2 -f "python3 -m drzreplay daemon" >/dev/null 2>&1 || true
+        pkill -USR2 -f "^(/usr/bin/drzreplay|python3 -m drzreplay) daemon" >/dev/null 2>&1 || true
     fi
 fi
 exit 0

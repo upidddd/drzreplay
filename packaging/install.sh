@@ -10,7 +10,7 @@ REPO="@REPO@"
 
 DEB=""
 case "$0" in
-    *install.sh) DEB="$(ls -1 "$(dirname "$0")"/drzreplay_*_all.deb 2>/dev/null | sort -V | tail -1)" ;;
+    *install.sh) DEB="$(ls -1 "$(dirname "$0")"/drzreplay_*.deb 2>/dev/null | sort -V | tail -1)" ;;
 esac
 if [ -z "$DEB" ]; then
     TMP="$(mktemp -d)"

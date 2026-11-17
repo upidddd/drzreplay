@@ -1,11 +1,12 @@
 #!/bin/sh
 # Build the .deb and publish it as a GitHub release  —  usage: packaging/release.sh
-# Needs `gh` logged in. Bump VERSION in src/drzreplay/core/config.py first.
+# Needs `gh` logged in. Bump `version` in Cargo.toml first. (CI does the same on a v* tag.)
 set -e
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
-VERSION="$(PYTHONPATH=src python3 -c 'from drzreplay.core.config import VERSION; print(VERSION)')"
+VERSION="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)"
 REPO="$(gh repo view --json nameWithOwner -q .nameWithOwner)"
+cargo build --release
 DEB="$(packaging/build-deb.sh)"
 OUT="$(mktemp -d)"
 trap 'rm -rf "$OUT"' EXIT

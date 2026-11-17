@@ -1,12 +1,12 @@
 Package: drzreplay
 Version: @VERSION@
-Architecture: all
+Architecture: @ARCH@
 Maintainer: upidddd <189487697+upidddd@users.noreply.github.com>
 Installed-Size: @SIZE@
-Depends: python3 (>= 3.11), python3-gi, gir1.2-gtk-4.0, gir1.2-adw-1 (>= 1.5), ffmpeg, python3-pil, libx11-6, x11-xserver-utils, pulseaudio-utils, libnotify-bin, xdg-utils
-Recommends: gir1.2-gtk-3.0, gir1.2-ayatanaappindicator3-0.1, xdg-user-dirs, dunst | notification-daemon,
- xdg-desktop-portal, gstreamer1.0-pipewire, gstreamer1.0-plugins-good, gstreamer1.0-plugins-bad,
- gstreamer1.0-plugins-ugly, gstreamer1.0-libav, gstreamer1.0-tools, libgtk-4-media-gstreamer
+Depends: libc6 (>= 2.39), libgtk-4-1 (>= 4.12), libadwaita-1-0 (>= 1.5), ffmpeg, pulseaudio-utils, libnotify-bin, xdg-utils
+Recommends: xdg-user-dirs, dunst | notification-daemon, xdg-desktop-portal, gstreamer1.0-pipewire,
+ gstreamer1.0-plugins-good, gstreamer1.0-plugins-bad, gstreamer1.0-plugins-ugly, gstreamer1.0-libav,
+ gstreamer1.0-tools, libgtk-4-media-gstreamer, python3
 Section: video
 Priority: optional
 Description: instant replay recorder for Linux (X11 and Wayland)
@@ -19,3 +19,4 @@ Description: instant replay recorder for Linux (X11 and Wayland)
  CPU x264 as a fallback) and buffered in RAM, so games stay smooth.
  Includes a settings app, tray icon and global hotkey for X11 desktops
  (including tiling window managers such as i3) and Wayland (GNOME, KDE).
+ Written in Rust.
