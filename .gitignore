@@ -1,6 +1,4 @@
+/target
+/dist
 __pycache__/
 *.pyc
-dist/
-src/drzreplay/assets/intro/*.png
-tools/out/
-tools/frames/
