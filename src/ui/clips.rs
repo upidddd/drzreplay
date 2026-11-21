@@ -1,6 +1,5 @@
 //! The Clips tab: the list of saved clips and what you can do with each of them.
 use super::{button, human_date, human_size, human_time, media, Win};
-use crate::config as C;
 use crate::hotkey::pretty;
 use crate::trim;
 use adw::prelude::*;
@@ -387,9 +386,4 @@ impl Win {
     pub(super) fn open_uri(&self, path: &Path) {
         let _ = gio::AppInfo::launch_default_for_uri(&gio::File::for_path(path).uri(), gio::AppLaunchContext::NONE);
     }
-}
-
-#[allow(dead_code)]
-fn _unused() -> PathBuf {
-    C::home()
 }

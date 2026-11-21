@@ -6,7 +6,7 @@ use std::os::unix::io::AsRawFd;
 use std::sync::mpsc::{channel, Receiver, Sender};
 use x11rb::connection::Connection;
 use x11rb::protocol::render::{self, ConnectionExt as _, PictOp, Pictformat};
-use x11rb::protocol::xproto::{self, ConnectionExt as _, *};
+use x11rb::protocol::xproto::{ConnectionExt as _, *};
 use x11rb::protocol::Event;
 use x11rb::rust_connection::RustConnection;
 use x11rb::wrapper::ConnectionExt as _;
@@ -440,6 +440,7 @@ impl Tray {
                 self.size = (e.width, e.height);
                 self.draw_icon();
             }
+            Event::ButtonPress(e) if e.event == self.win && self.menu.is_some() => self.close_menu(),
             Event::ButtonPress(e) if e.event == self.win => match e.detail {
                 1 | 2 => {
                     let _ = self.acts.send(Act::Save);
@@ -508,6 +509,3 @@ impl Tray {
         }
     }
 }
-
-#[allow(dead_code)]
-fn _unused(_: xproto::Window) {}

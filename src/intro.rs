@@ -280,10 +280,6 @@ impl<'a> Painter<'a> {
         out
     }
 
-    pub fn frame(&self, t: f64) -> Vec<u8> {
-        let (a, b, c) = self.state(t);
-        self.draw(a, b, c)
-    }
 }
 
 /// Write the animation as a transparent clip (qtrle .mov). Returns its size in pixels.

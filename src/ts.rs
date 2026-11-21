@@ -13,7 +13,6 @@ pub struct Analysis {
     /// seconds of video / sound in the file
     pub duration: f64,
     pub has_audio: bool,
-    pub has_video: bool,
     /// width x height of the picture, when the stream header could be read
     pub size: Option<(u32, u32)>,
     /// presentation times (seconds, in the file's own clock) of the keyframes
@@ -190,7 +189,6 @@ pub fn analyze(data: &[u8]) -> Option<Analysis> {
     Some(Analysis {
         duration: (hi - lo).max(0.0),
         has_audio: !audio.pts.is_empty(),
-        has_video: !video.pts.is_empty(),
         size,
         keys: k.iter().map(|p| *p as f64 / HZ).collect(),
     })

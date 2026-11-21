@@ -72,7 +72,7 @@ pub fn which(name: &str) -> Option<std::path::PathBuf> {
 pub fn is_wayland() -> bool {
     env::var("XDG_SESSION_TYPE").map(|v| v.eq_ignore_ascii_case("wayland")).unwrap_or(false)
         || (env::var_os("WAYLAND_DISPLAY").is_some_and(|v| !v.is_empty())
-            && env::var_os("DISPLAY").map_or(true, |v| v.is_empty()))
+            && env::var_os("DISPLAY").is_none_or(|v| v.is_empty()))
 }
 
 // ---------------------------------------------------------------- screens

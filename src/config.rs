@@ -94,9 +94,6 @@ pub fn assets_dir() -> PathBuf {
 pub fn icon_path() -> PathBuf {
     assets_dir().join("icons/drzreplay.svg")
 }
-pub fn icon_rec() -> PathBuf {
-    assets_dir().join("icons/drzreplay-rec.svg") // with a red dot: capturing
-}
 pub fn click_sound() -> PathBuf {
     assets_dir().join("sounds/click.wav")
 }

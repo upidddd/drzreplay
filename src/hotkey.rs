@@ -8,7 +8,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use x11rb::connection::Connection;
 use x11rb::protocol::xinput::{self, ConnectionExt as _};
-use x11rb::protocol::xproto::{self, ConnectionExt as _, GrabMode, ModMask};
+use x11rb::protocol::xproto::{ConnectionExt as _, GrabMode, ModMask};
 use x11rb::protocol::Event;
 use x11rb::rust_connection::RustConnection;
 
@@ -283,9 +283,6 @@ impl SyncOk for RustConnection {
         self.get_input_focus().map_err(|_| ())?.reply().map(|_| ()).map_err(|_| ())
     }
 }
-
-#[allow(dead_code)]
-fn _unused(_: xproto::Window) {}
 
 #[cfg(test)]
 mod tests {

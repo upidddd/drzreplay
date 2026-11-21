@@ -495,7 +495,11 @@ impl Daemon {
             let text = String::from_utf8_lossy(&cmd);
             if text.contains("ffmpeg") && text.contains(&target) {
                 if fs::metadata(format!("/proc/{name}")).map(|m| std::os::unix::fs::MetadataExt::uid(&m) == C::uid()).unwrap_or(false) {
-                    unsafe { libc::kill(name.parse().unwrap_or(0), libc::SIGTERM) };
+                    if let Ok(pid) = name.parse::<i32>() {
+                        if pid > 1 {
+                            unsafe { libc::kill(pid, libc::SIGTERM) };
+                        }
+                    }
                 }
             }
         }
@@ -560,7 +564,7 @@ impl Daemon {
     fn log_tail(&self) -> String {
         let Ok(data) = fs::read(C::ffmpeg_log()) else { return "unknown error".into() };
         let tail = &data[data.len().saturating_sub(400)..];
-        String::from_utf8_lossy(tail).lines().filter(|l| !l.is_empty() && !l.starts_with("---")).last().unwrap_or("unknown error").to_string()
+        String::from_utf8_lossy(tail).lines().rfind(|l| !l.is_empty() && !l.starts_with("---")).unwrap_or("unknown error").to_string()
     }
 
     // ------------------------------------------------------------ sound devices

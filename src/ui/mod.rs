@@ -17,7 +17,7 @@ use std::cell::{Cell, OnceCell, RefCell};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::rc::{Rc, Weak};
+use std::rc::Rc;
 use std::time::{Duration, Instant, SystemTime};
 
 const FPS: &[(i64, &str)] = &[(24, "24"), (30, "30"), (60, "60")];
@@ -1073,8 +1073,5 @@ pub fn main() -> i32 {
         });
     }
     let code = app.run_with_args::<&str>(&[]);
-    i32::from(code.value())
+    code.value()
 }
-
-#[allow(dead_code)]
-fn _weak_unused(_: Weak<Win>) {}
